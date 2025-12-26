@@ -108,7 +108,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, selectedItem]);
 
-  // --- LOGIC ẢNH & CROP ---
+  // --- LOGIC UPLOAD & CROP ---
   const onFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
@@ -121,6 +121,40 @@ export default function App() {
         setCrop({ unit: '%', width: 100, height: 100, x: 0, y: 0, aspect: undefined }); 
       });
       reader.readAsDataURL(file);
+    }
+  };
+
+  // --- LOGIC DÁN ẢNH (CTRL + V) ---
+  const handlePaste = (e) => {
+    // Lấy dữ liệu từ clipboard
+    const items = e.clipboardData.items;
+    
+    // Duyệt qua các item để tìm ảnh
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        // Nếu tìm thấy ảnh, lấy file ra
+        const file = items[i].getAsFile();
+        
+        // Kiểm tra kích thước
+        if (file.size > 10 * 1024 * 1024) {
+          setError("Ảnh quá lớn (>10MB).");
+          return;
+        }
+
+        // Đọc file và hiển thị trình cắt ảnh
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+          setImageSrc(reader.result);
+          setIsCropping(true); 
+          setError('');
+          setCrop({ unit: '%', width: 100, height: 100, x: 0, y: 0, aspect: undefined }); 
+        });
+        reader.readAsDataURL(file);
+        
+        // Ngăn chặn hành động dán mặc định (để không bị dán tên file vào ô input)
+        e.preventDefault();
+        break; // Chỉ lấy ảnh đầu tiên tìm thấy
+      }
     }
   };
 
@@ -231,9 +265,8 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               
-              {/* --- CỘT TRÁI: ẢNH LẤP ĐẦY (OBJECT-COVER) --- */}
+              {/* --- CỘT TRÁI: ẢNH LẤP ĐẦY --- */}
               <div className="bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px]">
-                {/* object-cover: Lấp đầy khung, w-full h-full: Kích thước 100% */}
                 <img 
                   src={selectedItem.image} 
                   alt={selectedItem.name} 
@@ -318,7 +351,11 @@ export default function App() {
         )}
 
         {isFormOpen && (
-          <div className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200 animate-in slide-in-from-top-4">
+          // --- THÊM SỰ KIỆN onPaste VÀO KHUNG FORM ---
+          <div 
+            className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200 animate-in slide-in-from-top-4"
+            onPaste={handlePaste} 
+          >
             <h2 className="font-bold mb-6 text-2xl text-slate-800">Thêm linh kiện mới</h2>
             {isCropping ? (
               <div className="flex flex-col gap-4 animate-in fade-in">
@@ -344,7 +381,7 @@ export default function App() {
                     <input type="number" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="w-full px-5 py-3 border-2 border-slate-200 rounded-xl focus:border-blue-500 outline-none text-lg font-mono" min="0" />
                   </div>
                   <div className="w-2/3">
-                    <label className="block text-base font-bold mb-2 text-slate-700">Hình ảnh</label>
+                    <label className="block text-base font-bold mb-2 text-slate-700">Hình ảnh (Hoặc nhấn Ctrl+V để dán)</label>
                     {newItemImage ? (
                       <div className="relative h-64 w-full bg-slate-50 rounded-xl overflow-hidden border-2 border-slate-300 group">
                         <img src={newItemImage} alt="Preview" className="w-full h-full object-cover" />
@@ -353,7 +390,7 @@ export default function App() {
                     ) : (
                       <label className="cursor-pointer bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center h-64 text-slate-500 transition hover:border-blue-400 hover:text-blue-500">
                         <ImageIcon size={40} className="mb-2 opacity-50"/>
-                        <span className="text-sm font-bold">Bấm để chọn ảnh</span>
+                        <span className="text-sm font-bold">Bấm để chọn ảnh hoặc dán (Ctrl+V)</span>
                         <input type="file" accept="image/*" onChange={onFileChange} className="hidden" />
                       </label>
                     )}
