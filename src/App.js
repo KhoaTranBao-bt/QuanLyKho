@@ -231,14 +231,17 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Cột Trái: Ảnh */}
-              <div className="relative bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 shadow-inner flex items-center justify-center h-[400px] lg:h-[600px]">
-                {/* Lớp nền mờ */}
-                <div className="absolute inset-0 z-0">
-                  <img src={selectedItem.image} className="w-full h-full object-cover opacity-30 blur-2xl scale-110" alt="background" />
-                </div>
-                {/* Ảnh chính (Đã thêm rounded-3xl) */}
-                <img src={selectedItem.image} alt={selectedItem.name} className="relative z-10 w-full h-full object-contain drop-shadow-xl p-4 rounded-3xl" />
+              {/* --- CỘT TRÁI: ẢNH (CHỈNH SỬA: OBJECT-COVER TRÀN VIỀN) --- */}
+              <div className="bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-inner flex items-center justify-center h-[400px] lg:h-[600px]">
+                {/* - object-cover: Phủ kín khung
+                   - w-full h-full: Kéo dãn hết cỡ
+                   - Không còn padding (p-4)
+                */}
+                <img 
+                  src={selectedItem.image} 
+                  alt={selectedItem.name} 
+                  className="w-full h-full object-cover" 
+                />
               </div>
 
               {/* Cột Phải: Thông tin */}
