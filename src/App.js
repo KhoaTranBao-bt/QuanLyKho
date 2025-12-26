@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, ZoomIn 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move 
 } from 'lucide-react';
 
 // --- THƯ VIỆN CẮT ẢNH ---
@@ -70,13 +70,12 @@ export default function App() {
   const [isEditingDesc, setIsEditingDesc] = useState(false); 
   const [descValue, setDescValue] = useState(""); 
 
-  // --- STATE SOI ẢNH (ZOOM & PAN) ---
+  // --- STATE SOI ẢNH (CHỈ PAN) ---
   const [viewScale, setViewScale] = useState(1); 
   const [viewPosition, setViewPosition] = useState({ x: 0, y: 0 }); 
   const [isDraggingView, setIsDraggingView] = useState(false); 
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); 
-  const detailImgRef = useRef(null); // Ref để tham chiếu ảnh trong trang chi tiết
-
+  
   // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
   const [crop, setCrop] = useState({ unit: '%', width: 100, height: 100, x: 0, y: 0 }); 
@@ -115,7 +114,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, selectedItem]);
 
-  // Reset view khi mở ảnh mới
+  // Reset vị trí khi mở ảnh mới
   useEffect(() => {
     if (selectedItem) {
       setViewPosition({ x: 0, y: 0 });
@@ -123,28 +122,24 @@ export default function App() {
     }
   }, [selectedItem]);
 
-  // --- LOGIC TỰ ĐỘNG TÍNH SCALE ĐỂ TRÀN VIỀN (SMART COVER) ---
+  // --- LOGIC TỰ ĐỘNG TÍNH SCALE ĐỂ TRÀN VIỀN (COVER) ---
   const handleDetailImageLoad = (e) => {
     const img = e.target;
-    const container = img.parentElement; // Lấy khung chứa
+    const container = img.parentElement; 
     
-    // Kích thước khung chứa
     const containerW = container.offsetWidth;
     const containerH = container.offsetHeight;
-    
-    // Kích thước hiển thị thực tế của ảnh (đang ở chế độ object-contain)
-    const imgW = img.width;
+    const imgW = img.width; // Kích thước render ban đầu (do object-contain)
     const imgH = img.height;
 
-    // Tính tỉ lệ cần phóng to để lấp đầy chiều rộng hoặc chiều cao
+    // Tính tỉ lệ để lấp đầy (Cover)
     const scaleX = containerW / imgW;
     const scaleY = containerH / imgH;
 
-    // Lấy tỉ lệ lớn hơn để đảm bảo LẤP ĐẦY (Cover)
-    // Nếu muốn vừa khít (Contain) thì dùng Math.min
+    // Lấy tỉ lệ lớn nhất để đảm bảo KHÔNG CÓ KHOẢNG TRỐNG
     let optimalScale = Math.max(scaleX, scaleY);
     
-    // Giới hạn không cho nhỏ hơn 1 (để không bị bé quá)
+    // Đảm bảo ảnh ít nhất là to bằng kích thước gốc (nếu container quá nhỏ)
     if (optimalScale < 1) optimalScale = 1;
 
     setViewScale(optimalScale);
@@ -293,52 +288,33 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               
-              {/* --- CỘT TRÁI: ẢNH SOI ĐƯỢC --- */}
+              {/* --- CỘT TRÁI: ẢNH LẤP ĐẦY & KÉO THẢ (ĐÃ SỬA) --- */}
               <div className="flex flex-col gap-3">
                 <div 
-                  className="bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative cursor-move group"
+                  className={`bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative group ${isDraggingView ? 'cursor-grabbing' : 'cursor-grab'}`}
                   onMouseDown={handleViewMouseDown}
                   onMouseMove={handleViewMouseMove}
                   onMouseUp={handleViewMouseUp}
                   onMouseLeave={handleViewMouseUp}
                 >
-                  {/* QUAN TRỌNG: 
-                      - object-contain: Để ảnh giữ nguyên tỉ lệ gốc, không bị méo.
-                      - width/height 100%: Để làm cơ sở tính toán.
-                      - transform scale: Sẽ phóng to nó lên mức "Cover" (lấp đầy) ngay khi load xong.
-                  */}
                   <img 
-                    ref={detailImgRef}
                     src={selectedItem.image} 
                     alt={selectedItem.name} 
-                    onLoad={handleDetailImageLoad} // Gọi hàm tính toán scale khi ảnh tải xong
+                    onLoad={handleDetailImageLoad} 
                     className="w-full h-full object-contain transition-transform duration-75 ease-out" 
                     draggable="false" 
                     style={{ 
+                      // Scale được tự động tính để lấp đầy khung
                       transform: `translate(${viewPosition.x}px, ${viewPosition.y}px) scale(${viewScale})`,
-                      cursor: isDraggingView ? 'grabbing' : 'grab' 
                     }}
                   />
                   
-                  <div className="absolute top-4 right-4 bg-black/50 text-white text-xs px-2 py-1 rounded-full pointer-events-none flex gap-1 items-center opacity-0 group-hover:opacity-100 transition">
-                    <Move size={12} /> Kéo để xem
+                  {/* Chỉ dẫn ẩn hiện khi hover */}
+                  <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full pointer-events-none flex gap-2 items-center opacity-0 group-hover:opacity-100 transition shadow-lg">
+                    <Move size={14} /> Giữ chuột & Kéo để xem
                   </div>
                 </div>
-
-                {/* Thanh Zoom */}
-                <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <ZoomIn className="text-slate-400" size={20}/>
-                  <input 
-                    type="range" 
-                    min="0.5" 
-                    max="5" 
-                    step="0.1" 
-                    value={viewScale} 
-                    onChange={(e) => setViewScale(parseFloat(e.target.value))}
-                    className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg cursor-pointer"
-                  />
-                  <span className="font-mono font-bold text-slate-500 w-12 text-right">{viewScale.toFixed(1)}x</span>
-                </div>
+                {/* ĐÃ XÓA THANH ZOOM Ở ĐÂY */}
               </div>
 
               {/* Cột Phải: Thông tin */}
