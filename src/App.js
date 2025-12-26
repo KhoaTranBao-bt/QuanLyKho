@@ -70,8 +70,8 @@ export default function App() {
   const [isEditingDesc, setIsEditingDesc] = useState(false); 
   const [descValue, setDescValue] = useState(""); 
 
-  // --- STATE SOI ẢNH (CHỈ PAN) ---
-  const [viewScale, setViewScale] = useState(1); 
+  // --- STATE SOI ẢNH (SMART COVER) ---
+  const [baseScale, setBaseScale] = useState(1); // Tỉ lệ cơ bản để lấp đầy khung
   const [viewPosition, setViewPosition] = useState({ x: 0, y: 0 }); 
   const [isDraggingView, setIsDraggingView] = useState(false); 
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); 
@@ -114,41 +114,40 @@ export default function App() {
     return () => unsubscribe();
   }, [user, selectedItem]);
 
-  // Reset vị trí khi mở ảnh mới
+  // Reset view khi mở ảnh mới
   useEffect(() => {
     if (selectedItem) {
       setViewPosition({ x: 0, y: 0 });
-      // Scale sẽ được tính toán lại trong hàm handleDetailImageLoad
+      setBaseScale(1); // Reset scale về mặc định trước khi tính toán
     }
   }, [selectedItem]);
 
-  // --- LOGIC TỰ ĐỘNG TÍNH SCALE ĐỂ TRÀN VIỀN (COVER) ---
+  // --- LOGIC TỰ ĐỘNG TÍNH SCALE ĐỂ TRÀN VIỀN (SMART COVER) ---
   const handleDetailImageLoad = (e) => {
     const img = e.target;
     const container = img.parentElement; 
     
     const containerW = container.offsetWidth;
     const containerH = container.offsetHeight;
-    const imgW = img.width; // Kích thước render ban đầu (do object-contain)
-    const imgH = img.height;
+    const imgNaturalW = img.naturalWidth;
+    const imgNaturalH = img.naturalHeight;
 
-    // Tính tỉ lệ để lấp đầy (Cover)
-    const scaleX = containerW / imgW;
-    const scaleY = containerH / imgH;
+    // Tính tỉ lệ cần thiết để lấp đầy
+    const scaleX = containerW / imgNaturalW;
+    const scaleY = containerH / imgNaturalH;
 
-    // Lấy tỉ lệ lớn nhất để đảm bảo KHÔNG CÓ KHOẢNG TRỐNG
-    let optimalScale = Math.max(scaleX, scaleY);
-    
-    // Đảm bảo ảnh ít nhất là to bằng kích thước gốc (nếu container quá nhỏ)
-    if (optimalScale < 1) optimalScale = 1;
+    // Lấy tỉ lệ LỚN NHẤT để đảm bảo ảnh PHỦ KÍN khung (Cover)
+    // Nếu dùng Math.min thì ảnh sẽ nằm lọt thỏm (Contain)
+    const scaleToCover = Math.max(scaleX, scaleY);
 
-    setViewScale(optimalScale);
+    setBaseScale(scaleToCover);
   };
 
   // --- LOGIC KÉO THẢ ẢNH ---
   const handleViewMouseDown = (e) => {
     e.preventDefault();
     setIsDraggingView(true);
+    // Lưu vị trí chuột so với vị trí hiện tại của ảnh
     setDragStart({ x: e.clientX - viewPosition.x, y: e.clientY - viewPosition.y });
   };
 
@@ -288,7 +287,7 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               
-              {/* --- CỘT TRÁI: ẢNH LẤP ĐẦY & KÉO THẢ (ĐÃ SỬA) --- */}
+              {/* --- CỘT TRÁI: ẢNH TRÀN VIỀN (Smart Cover) --- */}
               <div className="flex flex-col gap-3">
                 <div 
                   className={`bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative group ${isDraggingView ? 'cursor-grabbing' : 'cursor-grab'}`}
@@ -297,24 +296,23 @@ export default function App() {
                   onMouseUp={handleViewMouseUp}
                   onMouseLeave={handleViewMouseUp}
                 >
+                  {/* Ảnh được căn giữa tuyệt đối */}
                   <img 
                     src={selectedItem.image} 
                     alt={selectedItem.name} 
                     onLoad={handleDetailImageLoad} 
-                    className="w-full h-full object-contain transition-transform duration-75 ease-out" 
+                    className="absolute top-1/2 left-1/2 max-w-none transition-transform duration-75 ease-out" 
                     draggable="false" 
                     style={{ 
-                      // Scale được tự động tính để lấp đầy khung
-                      transform: `translate(${viewPosition.x}px, ${viewPosition.y}px) scale(${viewScale})`,
+                      // transform = Căn giữa (-50%) + Scale (Lấp đầy) + Translate (Kéo thả)
+                      transform: `translate(-50%, -50%) scale(${baseScale}) translate(${viewPosition.x / baseScale}px, ${viewPosition.y / baseScale}px)`,
                     }}
                   />
                   
-                  {/* Chỉ dẫn ẩn hiện khi hover */}
-                  <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full pointer-events-none flex gap-2 items-center opacity-0 group-hover:opacity-100 transition shadow-lg">
+                  <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full pointer-events-none flex gap-2 items-center opacity-0 group-hover:opacity-100 transition shadow-lg z-10">
                     <Move size={14} /> Giữ chuột & Kéo để xem
                   </div>
                 </div>
-                {/* ĐÃ XÓA THANH ZOOM Ở ĐÂY */}
               </div>
 
               {/* Cột Phải: Thông tin */}
