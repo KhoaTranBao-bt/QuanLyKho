@@ -277,7 +277,6 @@ export default function App() {
                       </div>
                     </div>
                   ) : (
-                    /* --- KHUNG MÔ TẢ ĐÃ CHỈNH SỬA: CÓ THANH CUỘN (SCROLL) --- */
                     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">
                       {selectedItem.description ? (
                         <p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">
@@ -366,8 +365,9 @@ export default function App() {
         )}
 
         <div className="relative mb-8">
+          {/* --- ĐÃ FIX: Icon Search căn giữa --- */}
           <input type="text" placeholder="Tìm kiếm nhanh..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" />
-          <Search className="absolute left-4 top-4.5 text-slate-400 w-6 h-6" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-6 h-6" />
         </div>
 
         {!loading && filteredItems.length === 0 ? (
