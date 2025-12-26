@@ -40,11 +40,16 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const COLLECTION_NAME = 'inventory_items';
 
+// --- CẤU HÌNH CLOUDINARY ---
+// Tôi đã điền sẵn Cloud Name của bạn lấy từ ảnh
+const CLOUD_NAME = "dphexeute"; 
+const UPLOAD_PRESET = "kho_linh_kien"; // Hãy chắc chắn bạn đã tạo preset tên y hệt thế này
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(''); // Đã thêm lại state lỗi
+  const [error, setError] = useState('');
   
   // Form State
   const [newItemName, setNewItemName] = useState('');
@@ -52,6 +57,7 @@ export default function App() {
   const [newItemImage, setNewItemImage] = useState(''); 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isUploading, setIsUploading] = useState(false); // State mới để hiện loading khi đang up ảnh
 
   // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
@@ -82,10 +88,7 @@ export default function App() {
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loadedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // Đã thêm lại: Sắp xếp thủ công đề phòng Firestore chưa index kịp
       loadedItems.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-
       setItems(loadedItems);
       setLoading(false);
     }, (err) => {
@@ -101,17 +104,11 @@ export default function App() {
   const onFileChange = async (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      // Check kích thước file trước khi xử lý ( > 5MB cảnh báo)
-      if (file.size > 5 * 1024 * 1024) {
-         setError("File ảnh quá lớn, vui lòng chọn ảnh dưới 5MB");
-         return;
-      }
-      
       const reader = new FileReader();
       reader.addEventListener('load', () => {
         setImageSrc(reader.result);
         setIsCropping(true); 
-        setError(''); // Xóa lỗi cũ nếu có
+        setError('');
       });
       reader.readAsDataURL(file);
     }
@@ -134,46 +131,70 @@ export default function App() {
     }
   }, [imageSrc, croppedAreaPixels]);
 
+  // --- HÀM UPLOAD LÊN CLOUDINARY ---
+  const uploadToCloudinary = async (base64Image) => {
+    const formData = new FormData();
+    formData.append("file", base64Image);
+    formData.append("upload_preset", UPLOAD_PRESET);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+      { method: "POST", body: formData }
+    );
+    
+    if (!response.ok) throw new Error("Lỗi khi upload lên Cloudinary");
+    const data = await response.json();
+    return data.secure_url;
+  };
+
   // --- CRUD FUNCTIONS ---
   const handleAddItem = async (e) => {
     e.preventDefault();
     if (!newItemName.trim() || !user) return;
     
+    setIsUploading(true); // Bật loading upload
+
     try {
+      let finalImageUrl = 'https://via.placeholder.com/150?text=No+Image';
+
+      // Nếu có ảnh Base64 (từ việc cắt ảnh), thì upload lên Cloudinary
+      if (newItemImage && newItemImage.startsWith('data:image')) {
+         finalImageUrl = await uploadToCloudinary(newItemImage);
+      } else if (newItemImage) {
+         // Nếu người dùng paste link ảnh online
+         finalImageUrl = newItemImage;
+      }
+
       await addDoc(collection(db, COLLECTION_NAME), {
         name: newItemName,
         quantity: parseInt(newItemQty),
-        image: newItemImage || 'https://via.placeholder.com/150?text=No+Image',
+        image: finalImageUrl, // Lưu link ngắn gọn từ Cloudinary
         createdAt: serverTimestamp(),
         createdBy: user.uid
       });
+
       // Reset form
       setNewItemName(''); setNewItemQty(1); setNewItemImage(''); setIsFormOpen(false);
       setError('');
     } catch (err) { 
-      console.error("Lỗi thêm mới:", err);
-      setError("Có lỗi khi thêm linh kiện.");
+      console.error("Lỗi:", err);
+      setError("Có lỗi khi upload ảnh hoặc lưu dữ liệu. Hãy kiểm tra lại Preset Cloudinary.");
+    } finally {
+      setIsUploading(false); // Tắt loading upload
     }
   };
 
   const handleDeleteItem = async (id) => {
     if (window.confirm("Bạn có chắc chắn muốn xóa linh kiện này không?")) {
-      try {
-        await deleteDoc(doc(db, COLLECTION_NAME, id));
-      } catch (err) {
-        console.error("Lỗi xóa:", err);
-        setError("Không xóa được linh kiện.");
-      }
+      try { await deleteDoc(doc(db, COLLECTION_NAME, id)); } 
+      catch (err) { setError("Không xóa được linh kiện."); }
     }
   };
 
   const handleUpdateQuantity = async (id, qty, change) => {
     if (qty + change >= 0) {
-      try {
-        await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: qty + change });
-      } catch (err) {
-        console.error(err);
-      }
+      try { await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: qty + change }); } 
+      catch (err) { console.error(err); }
     }
   };
 
@@ -181,7 +202,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10">
-      {/* Header */}
       <header className="bg-blue-600 text-white shadow-lg sticky top-0 z-10 px-4 py-4 flex justify-between items-center">
         <div className="flex items-center gap-2"><Package className="w-8 h-8" /><h1 className="text-xl font-bold">Kho Linh Kiện</h1></div>
         <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-4 py-2 rounded-full font-bold flex gap-2">
@@ -190,7 +210,6 @@ export default function App() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6">
-        {/* Error Notification (Đã thêm lại) */}
         {error && (
           <div className="mb-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-sm flex items-center gap-2">
             <AlertCircle size={20} />
@@ -198,14 +217,19 @@ export default function App() {
           </div>
         )}
 
-        {/* Loading */}
-        {loading && <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600 w-10 h-10" /></div>}
+        {(loading || isUploading) && (
+          <div className="fixed inset-0 bg-black/20 z-50 flex justify-center items-center backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-xl shadow-xl flex flex-col items-center">
+              <Loader2 className="animate-spin text-blue-600 w-10 h-10 mb-2" />
+              <p className="font-bold text-slate-700">{isUploading ? "Đang xử lý & Upload ảnh..." : "Đang tải dữ liệu..."}</p>
+            </div>
+          </div>
+        )}
 
         {isFormOpen && (
           <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-slate-200">
             <h2 className="font-bold mb-4 text-lg text-slate-700">Thêm linh kiện mới</h2>
             
-            {/* --- GIAO DIỆN CẮT ẢNH --- */}
             {isCropping ? (
               <div className="flex flex-col gap-4 animate-in fade-in duration-300">
                 <div className="relative h-72 w-full bg-slate-900 rounded-lg overflow-hidden border-2 border-blue-500 shadow-inner">
@@ -219,40 +243,28 @@ export default function App() {
                     onZoomChange={setZoom}
                   />
                 </div>
-                {/* Thanh điều khiển */}
                 <div className="flex flex-col gap-2">
                    <div className="flex items-center gap-2 px-2">
                       <span className="text-xs font-bold text-slate-500">Zoom:</span>
-                      <input 
-                        type="range" value={zoom} min={1} max={3} step={0.1} 
-                        onChange={(e) => setZoom(e.target.value)} 
-                        className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" 
-                      />
+                      <input type="range" value={zoom} min={1} max={3} step={0.1} onChange={(e) => setZoom(e.target.value)} className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" />
                    </div>
                    <div className="flex justify-between gap-4 mt-2">
-                      <button onClick={() => setIsCropping(false)} className="flex-1 bg-slate-200 text-slate-700 py-2 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-slate-300 transition">
-                        <X size={18}/> Hủy
-                      </button>
-                      <button onClick={showCroppedImage} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-green-700 transition shadow-lg shadow-green-200">
-                        <Check size={18}/> Cắt & Dùng Ảnh
-                      </button>
+                      <button onClick={() => setIsCropping(false)} className="flex-1 bg-slate-200 text-slate-700 py-2 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-slate-300 transition"><X size={18}/> Hủy</button>
+                      <button onClick={showCroppedImage} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-green-700 transition shadow-lg shadow-green-200"><Check size={18}/> Cắt & Dùng Ảnh</button>
                    </div>
                 </div>
               </div>
             ) : (
-              /* --- FORM NHẬP LIỆU --- */
               <form onSubmit={handleAddItem} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-600">Tên linh kiện</label>
                   <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required placeholder="VD: Mạch Uno R3..." />
                 </div>
-                
                 <div className="flex gap-4">
                   <div className="w-1/3">
                     <label className="block text-sm font-medium mb-1 text-slate-600">Số lượng</label>
                     <input type="number" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" min="0" />
                   </div>
-                  
                   <div className="w-2/3">
                     <label className="block text-sm font-medium mb-1 text-slate-600">Hình ảnh</label>
                     {newItemImage ? (
@@ -269,9 +281,8 @@ export default function App() {
                     )}
                   </div>
                 </div>
-
-                <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 shadow-md transition flex justify-center items-center gap-2">
-                  <Save size={20} /> Lưu Vào Kho
+                <button type="submit" disabled={isUploading} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 shadow-md transition flex justify-center items-center gap-2 disabled:bg-blue-300">
+                  <Save size={20} /> {isUploading ? "Đang xử lý..." : "Lưu Vào Kho"}
                 </button>
               </form>
             )}
@@ -288,9 +299,7 @@ export default function App() {
           <div className="text-center py-12 text-slate-500 bg-white rounded-xl border border-dashed border-slate-300">
             <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p className="text-lg">Kho đang trống hoặc không tìm thấy kết quả.</p>
-            <button onClick={() => setIsFormOpen(true)} className="text-blue-600 font-semibold hover:underline mt-2">
-              Thêm linh kiện mới ngay
-            </button>
+            <button onClick={() => setIsFormOpen(true)} className="text-blue-600 font-semibold hover:underline mt-2">Thêm linh kiện mới ngay</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -298,11 +307,7 @@ export default function App() {
               <div key={item.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-md transition">
                 <div className="h-48 w-full bg-white relative group border-b border-slate-50">
                   <img src={item.image} alt={item.name} className="w-full h-full object-contain p-2" 
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = 'https://via.placeholder.com/300x200?text=No+Image';
-                    }}
-                  />
+                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x200?text=No+Image'; }} />
                   <button onClick={() => handleDeleteItem(item.id)} className="absolute top-2 right-2 bg-white p-2 rounded-full text-red-500 shadow opacity-0 group-hover:opacity-100 transition hover:bg-red-50" title="Xóa"><Trash2 size={18} /></button>
                 </div>
                 <div className="p-4 flex-1 flex flex-col justify-between">
@@ -321,11 +326,9 @@ export default function App() {
           </div>
         )}
       </main>
-      
-      {/* Footer */}
       <footer className="max-w-4xl mx-auto px-4 py-8 text-center text-slate-400 text-sm">
         <p>© {new Date().getFullYear()} Quản Lý Kho Linh Kiện Cá Nhân</p>
-        <p className="text-xs mt-1">Dữ liệu được lưu trữ trên Google Firebase</p>
+        <p className="text-xs mt-1">Dữ liệu được lưu trữ trên Google Firebase & Cloudinary</p>
       </footer>
     </div>
   );
