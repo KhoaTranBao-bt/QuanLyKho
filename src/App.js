@@ -41,7 +41,7 @@ const firebaseConfig = {
   appId: "1:975808621358:web:f30a0821cb87f8c2b228bf",
   measurementId: "G-KSE9WXBL18"
 };
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const appId = 'default-app-id';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -65,14 +65,11 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
 
   // 1. Xác thực người dùng (Auth)
-  useEffect(() => {
+ useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        // Chỉ giữ lại đăng nhập ẩn danh, bỏ phần check token lạ đi
+        await signInAnonymously(auth);
       } catch (err) {
         console.error("Lỗi xác thực:", err);
         setError("Không thể kết nối đến hệ thống xác thực.");
