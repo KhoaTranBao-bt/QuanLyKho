@@ -41,9 +41,8 @@ const db = getFirestore(app);
 const COLLECTION_NAME = 'inventory_items';
 
 // --- CẤU HÌNH CLOUDINARY ---
-// Tôi đã điền sẵn Cloud Name của bạn lấy từ ảnh
 const CLOUD_NAME = "dphexeute"; 
-const UPLOAD_PRESET = "kho_linh_kien"; // Hãy chắc chắn bạn đã tạo preset tên y hệt thế này
+const UPLOAD_PRESET = "kho_linh_kien"; 
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -57,7 +56,7 @@ export default function App() {
   const [newItemImage, setNewItemImage] = useState(''); 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isUploading, setIsUploading] = useState(false); // State mới để hiện loading khi đang up ảnh
+  const [isUploading, setIsUploading] = useState(false);
 
   // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
@@ -66,44 +65,42 @@ export default function App() {
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
 
-  // 1. Auth
+  // Auth
   useEffect(() => {
     const initAuth = async () => {
-      try { 
-        await signInAnonymously(auth); 
-      } catch (err) { 
-        console.error("Lỗi xác thực:", err);
-        setError("Không thể kết nối đến hệ thống xác thực.");
-      }
+      try { await signInAnonymously(auth); } 
+      catch (err) { console.error("Lỗi xác thực:", err); setError("Lỗi kết nối."); }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
-  // 2. Data Fetching
+  // Data Fetching
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
-    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loadedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       loadedItems.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setItems(loadedItems);
       setLoading(false);
     }, (err) => {
-      console.error("Lỗi tải dữ liệu:", err);
+      console.error(err);
       setError("Không thể tải danh sách linh kiện.");
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, [user]);
 
-  // --- LOGIC CẮT ẢNH ---
+  // --- LOGIC ẢNH ---
   const onFileChange = async (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
+      if (file.size > 10 * 1024 * 1024) { 
+         setError("Ảnh quá lớn (>10MB).");
+         return;
+      }
       const reader = new FileReader();
       reader.addEventListener('load', () => {
         setImageSrc(reader.result);
@@ -127,67 +124,54 @@ export default function App() {
       setZoom(1);
     } catch (e) {
       console.error(e);
-      setError("Có lỗi khi cắt ảnh.");
+      setError("Lỗi cắt ảnh.");
     }
   }, [imageSrc, croppedAreaPixels]);
 
-  // --- HÀM UPLOAD LÊN CLOUDINARY ---
+  // Upload Cloudinary
   const uploadToCloudinary = async (base64Image) => {
     const formData = new FormData();
     formData.append("file", base64Image);
     formData.append("upload_preset", UPLOAD_PRESET);
-
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
-      { method: "POST", body: formData }
-    );
-    
-    if (!response.ok) throw new Error("Lỗi khi upload lên Cloudinary");
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: "POST", body: formData });
+    if (!response.ok) throw new Error("Lỗi upload Cloudinary");
     const data = await response.json();
     return data.secure_url;
   };
 
-  // --- CRUD FUNCTIONS ---
+  // CRUD
   const handleAddItem = async (e) => {
     e.preventDefault();
     if (!newItemName.trim() || !user) return;
-    
-    setIsUploading(true); // Bật loading upload
-
+    setIsUploading(true);
     try {
-      let finalImageUrl = 'https://via.placeholder.com/150?text=No+Image';
-
-      // Nếu có ảnh Base64 (từ việc cắt ảnh), thì upload lên Cloudinary
+      let finalImageUrl = 'https://via.placeholder.com/300?text=No+Image'; 
       if (newItemImage && newItemImage.startsWith('data:image')) {
          finalImageUrl = await uploadToCloudinary(newItemImage);
       } else if (newItemImage) {
-         // Nếu người dùng paste link ảnh online
          finalImageUrl = newItemImage;
       }
-
       await addDoc(collection(db, COLLECTION_NAME), {
         name: newItemName,
         quantity: parseInt(newItemQty),
-        image: finalImageUrl, // Lưu link ngắn gọn từ Cloudinary
+        image: finalImageUrl,
         createdAt: serverTimestamp(),
         createdBy: user.uid
       });
-
-      // Reset form
       setNewItemName(''); setNewItemQty(1); setNewItemImage(''); setIsFormOpen(false);
       setError('');
     } catch (err) { 
-      console.error("Lỗi:", err);
-      setError("Có lỗi khi upload ảnh hoặc lưu dữ liệu. Hãy kiểm tra lại Preset Cloudinary.");
+      console.error(err);
+      setError("Lỗi khi lưu. Kiểm tra lại mạng.");
     } finally {
-      setIsUploading(false); // Tắt loading upload
+      setIsUploading(false);
     }
   };
 
   const handleDeleteItem = async (id) => {
-    if (window.confirm("Bạn có chắc chắn muốn xóa linh kiện này không?")) {
+    if (window.confirm("Xóa linh kiện này?")) {
       try { await deleteDoc(doc(db, COLLECTION_NAME, id)); } 
-      catch (err) { setError("Không xóa được linh kiện."); }
+      catch (err) { setError("Không xóa được."); }
     }
   };
 
@@ -203,36 +187,31 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10">
       <header className="bg-blue-600 text-white shadow-lg sticky top-0 z-10 px-4 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-2"><Package className="w-8 h-8" /><h1 className="text-xl font-bold">Kho Linh Kiện</h1></div>
-        <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-4 py-2 rounded-full font-bold flex gap-2">
-          {isFormOpen ? <Minus size={18} /> : <Plus size={18} />} <span className="hidden sm:inline">{isFormOpen ? 'Đóng Form' : 'Thêm Mới'}</span>
+        <div className="flex items-center gap-2"><Package className="w-8 h-8" /><h1 className="text-xl md:text-2xl font-bold">Kho Linh Kiện</h1></div>
+        <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-5 py-2.5 rounded-full font-bold flex gap-2 shadow-sm hover:bg-blue-50 transition">
+          {isFormOpen ? <Minus size={20} /> : <Plus size={20} />} <span className="hidden sm:inline">{isFormOpen ? 'Đóng' : 'Thêm Mới'}</span>
         </button>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
-        {error && (
-          <div className="mb-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-sm flex items-center gap-2">
-            <AlertCircle size={20} />
-            <p>{error}</p>
-          </div>
-        )}
-
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        {error && <div className="mb-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded flex items-center gap-2"><AlertCircle size={20} /><p>{error}</p></div>}
+        
         {(loading || isUploading) && (
-          <div className="fixed inset-0 bg-black/20 z-50 flex justify-center items-center backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-xl shadow-xl flex flex-col items-center">
-              <Loader2 className="animate-spin text-blue-600 w-10 h-10 mb-2" />
-              <p className="font-bold text-slate-700">{isUploading ? "Đang xử lý & Upload ảnh..." : "Đang tải dữ liệu..."}</p>
+          <div className="fixed inset-0 bg-black/30 z-50 flex justify-center items-center backdrop-blur-sm">
+            <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center">
+              <Loader2 className="animate-spin text-blue-600 w-12 h-12 mb-3" />
+              <p className="font-bold text-lg text-slate-700">{isUploading ? "Đang xử lý ảnh..." : "Đang tải..."}</p>
             </div>
           </div>
         )}
 
         {isFormOpen && (
-          <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-slate-200">
-            <h2 className="font-bold mb-4 text-lg text-slate-700">Thêm linh kiện mới</h2>
+          <div className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200 animate-in slide-in-from-top-4">
+            <h2 className="font-bold mb-6 text-2xl text-slate-800">Thêm linh kiện mới</h2>
             
             {isCropping ? (
-              <div className="flex flex-col gap-4 animate-in fade-in duration-300">
-                <div className="relative h-72 w-full bg-slate-900 rounded-lg overflow-hidden border-2 border-blue-500 shadow-inner">
+              <div className="flex flex-col gap-4 animate-in fade-in">
+                <div className="relative h-[500px] w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl">
                   <Cropper
                     image={imageSrc}
                     crop={crop}
@@ -243,82 +222,84 @@ export default function App() {
                     onZoomChange={setZoom}
                   />
                 </div>
-                <div className="flex flex-col gap-2">
-                   <div className="flex items-center gap-2 px-2">
-                      <span className="text-xs font-bold text-slate-500">Zoom:</span>
-                      <input type="range" value={zoom} min={1} max={3} step={0.1} onChange={(e) => setZoom(e.target.value)} className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" />
+                <div className="flex flex-col gap-3">
+                   <div className="flex items-center gap-3 px-2">
+                      <span className="text-sm font-bold text-slate-500">Zoom:</span>
+                      <input type="range" value={zoom} min={1} max={3} step={0.1} onChange={(e) => setZoom(e.target.value)} className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg cursor-pointer" />
                    </div>
                    <div className="flex justify-between gap-4 mt-2">
-                      <button onClick={() => setIsCropping(false)} className="flex-1 bg-slate-200 text-slate-700 py-2 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-slate-300 transition"><X size={18}/> Hủy</button>
-                      <button onClick={showCroppedImage} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-green-700 transition shadow-lg shadow-green-200"><Check size={18}/> Cắt & Dùng Ảnh</button>
+                      <button onClick={() => setIsCropping(false)} className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-slate-300 transition text-lg"><X size={20}/> Hủy</button>
+                      <button onClick={showCroppedImage} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-green-700 transition shadow-lg text-lg"><Check size={20}/> Xong</button>
                    </div>
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleAddItem} className="space-y-4">
+              <form onSubmit={handleAddItem} className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-slate-600">Tên linh kiện</label>
-                  <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required placeholder="VD: Mạch Uno R3..." />
+                  <label className="block text-base font-bold mb-2 text-slate-700">Tên linh kiện</label>
+                  <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} className="w-full px-5 py-3 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-0 outline-none text-lg" required placeholder="Nhập tên..." />
                 </div>
-                <div className="flex gap-4">
+                <div className="flex gap-6">
                   <div className="w-1/3">
-                    <label className="block text-sm font-medium mb-1 text-slate-600">Số lượng</label>
-                    <input type="number" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" min="0" />
+                    <label className="block text-base font-bold mb-2 text-slate-700">Số lượng</label>
+                    <input type="number" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="w-full px-5 py-3 border-2 border-slate-200 rounded-xl focus:border-blue-500 outline-none text-lg font-mono" min="0" />
                   </div>
                   <div className="w-2/3">
-                    <label className="block text-sm font-medium mb-1 text-slate-600">Hình ảnh</label>
+                    <label className="block text-base font-bold mb-2 text-slate-700">Hình ảnh</label>
                     {newItemImage ? (
-                      <div className="relative h-32 w-full bg-slate-50 rounded-lg overflow-hidden border border-slate-300 group">
+                      <div className="relative h-64 w-full bg-slate-50 rounded-xl overflow-hidden border-2 border-slate-300 group">
                         <img src={newItemImage} alt="Preview" className="w-full h-full object-contain" />
-                        <button type="button" onClick={() => setNewItemImage('')} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full shadow-md hover:bg-red-600 transition"><Trash2 size={16}/></button>
+                        <button type="button" onClick={() => setNewItemImage('')} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full shadow-lg hover:bg-red-600 transition"><Trash2 size={20}/></button>
                       </div>
                     ) : (
-                      <label className="cursor-pointer bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center h-32 text-slate-500 transition hover:border-blue-400 hover:text-blue-500">
-                        <ImageIcon size={28} className="mb-2"/>
-                        <span className="text-xs font-bold">Bấm để chọn ảnh</span>
+                      <label className="cursor-pointer bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center h-64 text-slate-500 transition hover:border-blue-400 hover:text-blue-500">
+                        <ImageIcon size={40} className="mb-2 opacity-50"/>
+                        <span className="text-sm font-bold">Bấm để chọn ảnh</span>
                         <input type="file" accept="image/*" onChange={onFileChange} className="hidden" />
                       </label>
                     )}
                   </div>
                 </div>
-                <button type="submit" disabled={isUploading} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 shadow-md transition flex justify-center items-center gap-2 disabled:bg-blue-300">
-                  <Save size={20} /> {isUploading ? "Đang xử lý..." : "Lưu Vào Kho"}
+                <button type="submit" disabled={isUploading} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 shadow-lg transition flex justify-center items-center gap-2 disabled:bg-slate-400 text-lg">
+                  <Save size={24} /> {isUploading ? "Đang lưu..." : "Lưu Linh Kiện"}
                 </button>
               </form>
             )}
           </div>
         )}
 
-        {/* --- DANH SÁCH --- */}
-        <div className="relative mb-6">
-          <input type="text" placeholder="Tìm kiếm linh kiện..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-full border border-slate-200 shadow-sm focus:ring-2 focus:ring-blue-400 outline-none" />
-          <Search className="absolute left-3 top-3.5 text-slate-400 w-5 h-5" />
+        <div className="relative mb-8">
+          <input type="text" placeholder="Tìm kiếm nhanh..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" />
+          <Search className="absolute left-4 top-4.5 text-slate-400 w-6 h-6" />
         </div>
 
         {!loading && filteredItems.length === 0 ? (
-          <div className="text-center py-12 text-slate-500 bg-white rounded-xl border border-dashed border-slate-300">
-            <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p className="text-lg">Kho đang trống hoặc không tìm thấy kết quả.</p>
-            <button onClick={() => setIsFormOpen(true)} className="text-blue-600 font-semibold hover:underline mt-2">Thêm linh kiện mới ngay</button>
+          <div className="text-center py-16 text-slate-400 bg-white rounded-3xl border-2 border-dashed border-slate-200">
+            <Package className="w-16 h-16 mx-auto mb-4 opacity-30" />
+            <p className="text-xl font-medium">Kho chưa có gì cả</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredItems.map((item) => (
-              <div key={item.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-md transition">
-                <div className="h-48 w-full bg-white relative group border-b border-slate-50">
-                  <img src={item.image} alt={item.name} className="w-full h-full object-contain p-2" 
-                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x200?text=No+Image'; }} />
-                  <button onClick={() => handleDeleteItem(item.id)} className="absolute top-2 right-2 bg-white p-2 rounded-full text-red-500 shadow opacity-0 group-hover:opacity-100 transition hover:bg-red-50" title="Xóa"><Trash2 size={18} /></button>
+              <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300">
+                
+                {/* --- KHUNG ẢNH DANH SÁCH: TĂNG GẤP ĐÔI (h-80) --- */}
+                <div className="h-80 w-full bg-white relative group border-b border-slate-50 p-4">
+                  <img src={item.image} alt={item.name} className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105" 
+                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} />
+                  <button onClick={() => handleDeleteItem(item.id)} className="absolute top-3 right-3 bg-white/90 backdrop-blur p-2.5 rounded-full text-red-500 shadow-md opacity-0 group-hover:opacity-100 transition hover:bg-red-500 hover:text-white" title="Xóa"><Trash2 size={20} /></button>
                 </div>
-                <div className="p-4 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h3 className="font-bold text-slate-800 text-lg line-clamp-2 mb-1">{item.name}</h3>
-                    <p className="text-xs text-slate-400 mb-2">ID: {item.id.slice(0,8)}...</p>
+
+                <div className="p-5 flex-1 flex flex-col justify-between">
+                  <div className="mb-4">
+                    <h3 className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1">{item.name}</h3>
+                    <p className="text-xs text-slate-400 font-mono">#{item.id.slice(0,6)}</p>
                   </div>
-                  <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)} className="w-8 h-8 bg-white border rounded-full flex items-center justify-center hover:bg-slate-200 text-slate-600 disabled:opacity-50" disabled={item.quantity <= 0}><Minus size={16}/></button>
-                    <span className={`font-mono font-bold text-lg ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span>
-                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity, 1)} className="w-8 h-8 bg-white border rounded-full flex items-center justify-center hover:bg-slate-200 text-slate-600"><Plus size={16}/></button>
+                  
+                  <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)} className="w-10 h-10 bg-white border border-slate-200 rounded-lg flex items-center justify-center hover:bg-blue-50 text-slate-600 disabled:opacity-30 transition shadow-sm" disabled={item.quantity <= 0}><Minus size={18}/></button>
+                    <span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span>
+                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity, 1)} className="w-10 h-10 bg-white border border-slate-200 rounded-lg flex items-center justify-center hover:bg-blue-50 text-slate-600 transition shadow-sm"><Plus size={18}/></button>
                   </div>
                 </div>
               </div>
@@ -326,9 +307,10 @@ export default function App() {
           </div>
         )}
       </main>
-      <footer className="max-w-4xl mx-auto px-4 py-8 text-center text-slate-400 text-sm">
-        <p>© {new Date().getFullYear()} Quản Lý Kho Linh Kiện Cá Nhân</p>
-        <p className="text-xs mt-1">Dữ liệu được lưu trữ trên Google Firebase & Cloudinary</p>
+
+      <footer className="max-w-4xl mx-auto px-4 py-10 text-center text-slate-400 text-sm">
+        <p>© {new Date().getFullYear()} Quản Lý Kho Linh Kiện</p>
+        <p className="text-xs mt-1">Lưu trữ: Firebase & Cloudinary</p>
       </footer>
     </div>
   );
