@@ -231,12 +231,14 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Cột Trái: Ảnh (Vẫn giữ hiệu ứng nền mờ sang trọng) */}
+              {/* Cột Trái: Ảnh */}
               <div className="relative bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 shadow-inner flex items-center justify-center h-[400px] lg:h-[600px]">
+                {/* Lớp nền mờ */}
                 <div className="absolute inset-0 z-0">
                   <img src={selectedItem.image} className="w-full h-full object-cover opacity-30 blur-2xl scale-110" alt="background" />
                 </div>
-                <img src={selectedItem.image} alt={selectedItem.name} className="relative z-10 w-full h-full object-contain drop-shadow-xl p-4" />
+                {/* Ảnh chính (Đã thêm rounded-3xl) */}
+                <img src={selectedItem.image} alt={selectedItem.name} className="relative z-10 w-full h-full object-contain drop-shadow-xl p-4 rounded-3xl" />
               </div>
 
               {/* Cột Phải: Thông tin */}
@@ -244,6 +246,7 @@ export default function App() {
                 <h1 className="text-3xl md:text-4xl font-bold text-slate-800 mb-2">{selectedItem.name}</h1>
                 <p className="text-sm text-slate-400 font-mono mb-6">ID: {selectedItem.id}</p>
 
+                {/* Số Lượng */}
                 <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8">
                    <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span>
                    <div className="flex items-center gap-4">
@@ -252,6 +255,7 @@ export default function App() {
                    </div>
                 </div>
 
+                {/* Mô Tả */}
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-3">
                     <h2 className="text-xl font-bold flex items-center gap-2 text-slate-700">
@@ -345,7 +349,6 @@ export default function App() {
                     <label className="block text-base font-bold mb-2 text-slate-700">Hình ảnh</label>
                     {newItemImage ? (
                       <div className="relative h-64 w-full bg-slate-50 rounded-xl overflow-hidden border-2 border-slate-300 group">
-                        {/* --- KHUNG PREVIEW: DÙNG OBJECT-COVER ĐỂ KHỚP VỚI DANH SÁCH --- */}
                         <img src={newItemImage} alt="Preview" className="w-full h-full object-cover" />
                         <button type="button" onClick={() => setNewItemImage('')} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full shadow-lg hover:bg-red-600 transition"><Trash2 size={20}/></button>
                       </div>
@@ -381,7 +384,6 @@ export default function App() {
             {filteredItems.map((item) => (
               <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300">
                 <div onClick={() => openDetail(item)} className="h-80 w-full bg-white relative group border-b border-slate-50 p-4 cursor-pointer">
-                  {/* --- DANH SÁCH THẺ: DÙNG OBJECT-COVER ĐỂ PHỦ KÍN KHUNG --- */}
                   <img src={item.image} alt={item.name} className="w-full h-full object-cover rounded-lg transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} />
                 </div>
 
