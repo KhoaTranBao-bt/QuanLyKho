@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, ZoomIn 
 } from 'lucide-react';
 
 // --- THƯ VIỆN CẮT ẢNH ---
@@ -70,6 +70,12 @@ export default function App() {
   const [isEditingDesc, setIsEditingDesc] = useState(false); 
   const [descValue, setDescValue] = useState(""); 
 
+  // --- STATE CHO VIỆC SOI ẢNH (ZOOM & PAN) ---
+  const [viewScale, setViewScale] = useState(1); // Độ phóng to
+  const [viewPosition, setViewPosition] = useState({ x: 0, y: 0 }); // Vị trí ảnh (X, Y)
+  const [isDraggingView, setIsDraggingView] = useState(false); // Đang kéo chuột hay không
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Điểm bắt đầu kéo
+
   // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
   const [crop, setCrop] = useState({ unit: '%', width: 100, height: 100, x: 0, y: 0 }); 
@@ -107,6 +113,36 @@ export default function App() {
     });
     return () => unsubscribe();
   }, [user, selectedItem]);
+
+  // Reset vị trí ảnh khi mở sản phẩm mới
+  useEffect(() => {
+    if (selectedItem) {
+      setViewScale(1);
+      setViewPosition({ x: 0, y: 0 });
+    }
+  }, [selectedItem]);
+
+  // --- LOGIC KÉO THẢ ẢNH (PANNING) ---
+  const handleViewMouseDown = (e) => {
+    e.preventDefault();
+    setIsDraggingView(true);
+    // Lưu vị trí chuột ban đầu trừ đi vị trí hiện tại của ảnh để tính offset chuẩn
+    setDragStart({ x: e.clientX - viewPosition.x, y: e.clientY - viewPosition.y });
+  };
+
+  const handleViewMouseMove = (e) => {
+    if (!isDraggingView) return;
+    e.preventDefault();
+    // Tính toán vị trí mới
+    setViewPosition({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    });
+  };
+
+  const handleViewMouseUp = () => {
+    setIsDraggingView(false);
+  };
 
   // --- LOGIC ẢNH & CROP ---
   const onFileChange = (e) => {
@@ -193,7 +229,7 @@ export default function App() {
     try { await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: parseInt(editQtyValue) }); setEditingId(null); } catch (err) {}
   };
 
-  // --- LOGIC TRANG CHI TIẾT & MÔ TẢ ---
+  // --- LOGIC TRANG CHI TIẾT ---
   const openDetail = (item) => {
     setSelectedItem(item);
     setDescValue(item.description || ""); 
@@ -231,17 +267,48 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* --- CỘT TRÁI: ẢNH (CHỈNH SỬA: OBJECT-COVER TRÀN VIỀN) --- */}
-              <div className="bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-inner flex items-center justify-center h-[400px] lg:h-[600px]">
-                {/* - object-cover: Phủ kín khung
-                   - w-full h-full: Kéo dãn hết cỡ
-                   - Không còn padding (p-4)
-                */}
-                <img 
-                  src={selectedItem.image} 
-                  alt={selectedItem.name} 
-                  className="w-full h-full object-cover" 
-                />
+              
+              {/* --- CỘT TRÁI: ẢNH SOI ĐƯỢC (ZOOM & PAN) --- */}
+              <div className="flex flex-col gap-3">
+                <div 
+                  className="bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative cursor-move"
+                  onMouseDown={handleViewMouseDown}
+                  onMouseMove={handleViewMouseMove}
+                  onMouseUp={handleViewMouseUp}
+                  onMouseLeave={handleViewMouseUp}
+                >
+                  {/* Ảnh chính có thể di chuyển và phóng to */}
+                  <img 
+                    src={selectedItem.image} 
+                    alt={selectedItem.name} 
+                    className="w-full h-full object-contain transition-transform duration-75 ease-out" 
+                    draggable="false" // Tắt kéo ảnh mặc định của trình duyệt
+                    style={{ 
+                      transform: `translate(${viewPosition.x}px, ${viewPosition.y}px) scale(${viewScale})`,
+                      cursor: isDraggingView ? 'grabbing' : 'grab' 
+                    }}
+                  />
+                  
+                  {/* Chỉ dẫn cho người dùng */}
+                  <div className="absolute top-4 right-4 bg-black/50 text-white text-xs px-2 py-1 rounded-full pointer-events-none flex gap-1 items-center">
+                    <Move size={12} /> Giữ chuột để kéo
+                  </div>
+                </div>
+
+                {/* Thanh điều khiển Zoom */}
+                <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <ZoomIn className="text-slate-400" size={20}/>
+                  <input 
+                    type="range" 
+                    min="1" 
+                    max="4" 
+                    step="0.1" 
+                    value={viewScale} 
+                    onChange={(e) => setViewScale(parseFloat(e.target.value))}
+                    className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg cursor-pointer"
+                  />
+                  <span className="font-mono font-bold text-slate-500 w-12 text-right">{viewScale}x</span>
+                </div>
               </div>
 
               {/* Cột Phải: Thông tin */}
@@ -249,7 +316,6 @@ export default function App() {
                 <h1 className="text-3xl md:text-4xl font-bold text-slate-800 mb-2">{selectedItem.name}</h1>
                 <p className="text-sm text-slate-400 font-mono mb-6">ID: {selectedItem.id}</p>
 
-                {/* Số Lượng */}
                 <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8">
                    <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span>
                    <div className="flex items-center gap-4">
@@ -258,7 +324,6 @@ export default function App() {
                    </div>
                 </div>
 
-                {/* Mô Tả */}
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-3">
                     <h2 className="text-xl font-bold flex items-center gap-2 text-slate-700">
