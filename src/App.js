@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
   signInAnonymously, 
-  onAuthStateChanged,
-  signInWithCustomToken 
+  onAuthStateChanged 
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -19,19 +18,13 @@ import {
   orderBy 
 } from 'firebase/firestore';
 import { 
-  Plus, 
-  Trash2, 
-  Search, 
-  Package, 
-  Minus, 
-  Save, 
-  Image as ImageIcon,
-  AlertCircle,
-  Loader2
+  Plus, Trash2, Search, Package, Minus, Save, 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle 
 } from 'lucide-react';
+import Cropper from 'react-easy-crop';
+import getCroppedImg from './cropUtils'; 
 
-// --- Cấu hình Firebase & Khởi tạo ---
-// Lưu ý: Trong môi trường thực tế, bạn sẽ lấy config từ Firebase Console
+// --- CẤU HÌNH FIREBASE ---
 const firebaseConfig = {
   apiKey: "AIzaSyDRFJjd4IsbFSJIuaAR1UgMnMB-gdnEwfo",
   authDomain: "xuanvinhlinhkien.firebaseapp.com",
@@ -41,175 +34,163 @@ const firebaseConfig = {
   appId: "1:975808621358:web:f30a0821cb87f8c2b228bf",
   measurementId: "G-KSE9WXBL18"
 };
-const appId = 'default-app-id';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// Tên collection trong Firestore (Tuân thủ quy tắc đường dẫn bắt buộc)
-// Chúng ta dùng "public" để demo, trong thực tế bạn nên dùng "users" để bảo mật
 const COLLECTION_NAME = 'inventory_items';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(''); // Đã thêm lại state lỗi
   
-  // State cho form thêm mới
+  // Form State
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState(1);
-  const [newItemImage, setNewItemImage] = useState(''); // URL hoặc Base64
+  const [newItemImage, setNewItemImage] = useState(''); 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // 1. Xác thực người dùng (Auth)
- useEffect(() => {
+  // --- CROPPER STATE ---
+  const [imageSrc, setImageSrc] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  const [isCropping, setIsCropping] = useState(false);
+
+  // 1. Auth
+  useEffect(() => {
     const initAuth = async () => {
-      try {
-        // Chỉ giữ lại đăng nhập ẩn danh, bỏ phần check token lạ đi
-        await signInAnonymously(auth);
-      } catch (err) {
+      try { 
+        await signInAnonymously(auth); 
+      } catch (err) { 
         console.error("Lỗi xác thực:", err);
         setError("Không thể kết nối đến hệ thống xác thực.");
       }
     };
-
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
+    const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
-  // 2. Lắng nghe dữ liệu từ Firestore (Real-time)
+  // 2. Data Fetching
   useEffect(() => {
     if (!user) return;
-
-    // Đường dẫn tuân thủ Rule 1: /artifacts/{appId}/public/data/{collectionName}
-    const itemsCollection = collection(db, COLLECTION_NAME);
-    // Rule 2: Không dùng orderBy phức tạp. Lấy hết về rồi sort ở client
-    const q = query(itemsCollection, orderBy('createdAt', 'desc')); 
-
+    const q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedItems = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const loadedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Sắp xếp theo thời gian tạo mới nhất ở Client
+      // Đã thêm lại: Sắp xếp thủ công đề phòng Firestore chưa index kịp
       loadedItems.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      
+
       setItems(loadedItems);
       setLoading(false);
     }, (err) => {
       console.error("Lỗi tải dữ liệu:", err);
-      setError("Không thể tải danh sách linh kiện. Vui lòng thử lại.");
+      setError("Không thể tải danh sách linh kiện.");
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, [user]);
 
-  // Xử lý thêm mới
+  // --- LOGIC CẮT ẢNH ---
+  const onFileChange = async (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      // Check kích thước file trước khi xử lý ( > 5MB cảnh báo)
+      if (file.size > 5 * 1024 * 1024) {
+         setError("File ảnh quá lớn, vui lòng chọn ảnh dưới 5MB");
+         return;
+      }
+      
+      const reader = new FileReader();
+      reader.addEventListener('load', () => {
+        setImageSrc(reader.result);
+        setIsCropping(true); 
+        setError(''); // Xóa lỗi cũ nếu có
+      });
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const showCroppedImage = useCallback(async () => {
+    try {
+      const croppedImageBase64 = await getCroppedImg(imageSrc, croppedAreaPixels);
+      setNewItemImage(croppedImageBase64);
+      setIsCropping(false);
+      setImageSrc(null);
+      setZoom(1);
+    } catch (e) {
+      console.error(e);
+      setError("Có lỗi khi cắt ảnh.");
+    }
+  }, [imageSrc, croppedAreaPixels]);
+
+  // --- CRUD FUNCTIONS ---
   const handleAddItem = async (e) => {
     e.preventDefault();
-    if (!newItemName.trim()) return;
-    if (!user) return;
-
+    if (!newItemName.trim() || !user) return;
+    
     try {
-        const itemsCollection = collection(db, COLLECTION_NAME);
-        await addDoc(itemsCollection, {
+      await addDoc(collection(db, COLLECTION_NAME), {
         name: newItemName,
         quantity: parseInt(newItemQty),
         image: newItemImage || 'https://via.placeholder.com/150?text=No+Image',
         createdAt: serverTimestamp(),
         createdBy: user.uid
       });
-
       // Reset form
-      setNewItemName('');
-      setNewItemQty(1);
-      setNewItemImage('');
-      setIsFormOpen(false);
-    } catch (err) {
+      setNewItemName(''); setNewItemQty(1); setNewItemImage(''); setIsFormOpen(false);
+      setError('');
+    } catch (err) { 
       console.error("Lỗi thêm mới:", err);
       setError("Có lỗi khi thêm linh kiện.");
     }
   };
 
-  // Xử lý cập nhật số lượng
-  const handleUpdateQuantity = async (id, currentQty, change) => {
-    if (!user) return;
-    const newQty = currentQty + change;
-    if (newQty < 0) return;
-
-    try {
-      const itemRef = doc(db, COLLECTION_NAME, id);
-      await updateDoc(itemRef, { quantity: newQty });
-    } catch (err) {
-      console.error("Lỗi cập nhật:", err);
-    }
-  };
-
-  // Xử lý xóa
   const handleDeleteItem = async (id) => {
-    if (!user) return;
-    // Dùng window.confirm thay vì alert, nhưng tốt nhất là Modal custom (ở đây làm đơn giản)
-    if (!window.confirm("Bạn có chắc chắn muốn xóa linh kiện này không?")) return;
-
-    try {
-      const itemRef = doc(db, COLLECTION_NAME, id);
-      await deleteDoc(itemRef);
-    } catch (err) {
-      console.error("Lỗi xóa:", err);
-    }
-  };
-
-  // Xử lý upload ảnh local (Convert sang Base64 để lưu vào Firestore - Giới hạn ảnh nhỏ)
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 1048487) { // Giới hạn ~1MB do giới hạn document Firestore
-        alert("Vui lòng chọn ảnh nhỏ hơn 1MB hoặc dùng link ảnh.");
-        return;
+    if (window.confirm("Bạn có chắc chắn muốn xóa linh kiện này không?")) {
+      try {
+        await deleteDoc(doc(db, COLLECTION_NAME, id));
+      } catch (err) {
+        console.error("Lỗi xóa:", err);
+        setError("Không xóa được linh kiện.");
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setNewItemImage(reader.result);
-      };
-      reader.readAsDataURL(file);
     }
   };
 
-  // Filter items search
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleUpdateQuantity = async (id, qty, change) => {
+    if (qty + change >= 0) {
+      try {
+        await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: qty + change });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const filteredItems = items.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10">
       {/* Header */}
-      <header className="bg-blue-600 text-white shadow-lg sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <Package className="w-8 h-8" />
-            <h1 className="text-xl md:text-2xl font-bold">Kho Linh Kiện</h1>
-          </div>
-          <button 
-            onClick={() => setIsFormOpen(!isFormOpen)}
-            className="bg-white text-blue-600 px-4 py-2 rounded-full font-semibold hover:bg-blue-50 transition flex items-center gap-2 shadow-sm"
-          >
-            {isFormOpen ? <Minus size={18} /> : <Plus size={18} />}
-            <span className="hidden sm:inline">{isFormOpen ? 'Đóng Form' : 'Thêm Mới'}</span>
-          </button>
-        </div>
+      <header className="bg-blue-600 text-white shadow-lg sticky top-0 z-10 px-4 py-4 flex justify-between items-center">
+        <div className="flex items-center gap-2"><Package className="w-8 h-8" /><h1 className="text-xl font-bold">Kho Linh Kiện</h1></div>
+        <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-4 py-2 rounded-full font-bold flex gap-2">
+          {isFormOpen ? <Minus size={18} /> : <Plus size={18} />} <span className="hidden sm:inline">{isFormOpen ? 'Đóng Form' : 'Thêm Mới'}</span>
+        </button>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6">
-        
-        {/* Error Notification */}
+        {/* Error Notification (Đã thêm lại) */}
         {error && (
           <div className="mb-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-sm flex items-center gap-2">
             <AlertCircle size={20} />
@@ -217,94 +198,92 @@ export default function App() {
           </div>
         )}
 
-        {/* Loading State */}
-        {loading && (
-          <div className="flex justify-center items-center py-10">
-            <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-          </div>
-        )}
+        {/* Loading */}
+        {loading && <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600 w-10 h-10" /></div>}
 
-        {/* Form Thêm Mới */}
         {isFormOpen && (
-          <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-slate-200 animate-in slide-in-from-top-4 fade-in duration-300">
-            <h2 className="text-lg font-bold mb-4 text-slate-700">Nhập thông tin linh kiện</h2>
-            <form onSubmit={handleAddItem} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Tên linh kiện</label>
-                <input 
-                  type="text" 
-                  value={newItemName}
-                  onChange={(e) => setNewItemName(e.target.value)}
-                  placeholder="Ví dụ: Arduino Uno R3, Tụ điện 100uF..."
-                  className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  required
-                />
-              </div>
-              
-              <div className="flex gap-4">
-                <div className="w-1/3">
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Số lượng</label>
-                  <input 
-                    type="number" 
-                    value={newItemQty}
-                    onChange={(e) => setNewItemQty(e.target.value)}
-                    min="0"
-                    className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-slate-200">
+            <h2 className="font-bold mb-4 text-lg text-slate-700">Thêm linh kiện mới</h2>
+            
+            {/* --- GIAO DIỆN CẮT ẢNH --- */}
+            {isCropping ? (
+              <div className="flex flex-col gap-4 animate-in fade-in duration-300">
+                <div className="relative h-72 w-full bg-slate-900 rounded-lg overflow-hidden border-2 border-blue-500 shadow-inner">
+                  <Cropper
+                    image={imageSrc}
+                    crop={crop}
+                    zoom={zoom}
+                    aspect={4 / 3}
+                    onCropChange={setCrop}
+                    onCropComplete={onCropComplete}
+                    onZoomChange={setZoom}
                   />
                 </div>
-                <div className="w-2/3">
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Hình ảnh</label>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input 
-                      type="text" 
-                      value={newItemImage}
-                      onChange={(e) => setNewItemImage(e.target.value)}
-                      placeholder="Dán link ảnh (URL)..."
-                      className="flex-1 px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-                    />
-                    <div className="relative">
+                {/* Thanh điều khiển */}
+                <div className="flex flex-col gap-2">
+                   <div className="flex items-center gap-2 px-2">
+                      <span className="text-xs font-bold text-slate-500">Zoom:</span>
                       <input 
-                        type="file" 
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="hidden"
-                        id="file-upload"
+                        type="range" value={zoom} min={1} max={3} step={0.1} 
+                        onChange={(e) => setZoom(e.target.value)} 
+                        className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" 
                       />
-                      <label 
-                        htmlFor="file-upload"
-                        className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg border border-slate-300 flex items-center justify-center gap-1 h-full whitespace-nowrap text-sm font-medium transition"
-                      >
-                        <ImageIcon size={16} /> Tải ảnh
-                      </label>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">Dán link ảnh online hoặc tải ảnh nhỏ (max 1MB).</p>
+                   </div>
+                   <div className="flex justify-between gap-4 mt-2">
+                      <button onClick={() => setIsCropping(false)} className="flex-1 bg-slate-200 text-slate-700 py-2 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-slate-300 transition">
+                        <X size={18}/> Hủy
+                      </button>
+                      <button onClick={showCroppedImage} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-green-700 transition shadow-lg shadow-green-200">
+                        <Check size={18}/> Cắt & Dùng Ảnh
+                      </button>
+                   </div>
                 </div>
               </div>
+            ) : (
+              /* --- FORM NHẬP LIỆU --- */
+              <form onSubmit={handleAddItem} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-slate-600">Tên linh kiện</label>
+                  <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required placeholder="VD: Mạch Uno R3..." />
+                </div>
+                
+                <div className="flex gap-4">
+                  <div className="w-1/3">
+                    <label className="block text-sm font-medium mb-1 text-slate-600">Số lượng</label>
+                    <input type="number" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" min="0" />
+                  </div>
+                  
+                  <div className="w-2/3">
+                    <label className="block text-sm font-medium mb-1 text-slate-600">Hình ảnh</label>
+                    {newItemImage ? (
+                      <div className="relative h-32 w-full bg-slate-50 rounded-lg overflow-hidden border border-slate-300 group">
+                        <img src={newItemImage} alt="Preview" className="w-full h-full object-contain" />
+                        <button type="button" onClick={() => setNewItemImage('')} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full shadow-md hover:bg-red-600 transition"><Trash2 size={16}/></button>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center h-32 text-slate-500 transition hover:border-blue-400 hover:text-blue-500">
+                        <ImageIcon size={28} className="mb-2"/>
+                        <span className="text-xs font-bold">Bấm để chọn ảnh</span>
+                        <input type="file" accept="image/*" onChange={onFileChange} className="hidden" />
+                      </label>
+                    )}
+                  </div>
+                </div>
 
-              <button 
-                type="submit" 
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-md hover:shadow-lg transition flex justify-center items-center gap-2"
-              >
-                <Save size={18} /> Lưu vào kho
-              </button>
-            </form>
+                <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 shadow-md transition flex justify-center items-center gap-2">
+                  <Save size={20} /> Lưu Vào Kho
+                </button>
+              </form>
+            )}
           </div>
         )}
 
-        {/* Search Bar */}
+        {/* --- DANH SÁCH --- */}
         <div className="relative mb-6">
-          <input 
-            type="text" 
-            placeholder="Tìm kiếm linh kiện..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 rounded-full border border-slate-200 shadow-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
-          />
+          <input type="text" placeholder="Tìm kiếm linh kiện..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-full border border-slate-200 shadow-sm focus:ring-2 focus:ring-blue-400 outline-none" />
           <Search className="absolute left-3 top-3.5 text-slate-400 w-5 h-5" />
         </div>
 
-        {/* Inventory Grid */}
         {!loading && filteredItems.length === 0 ? (
           <div className="text-center py-12 text-slate-500 bg-white rounded-xl border border-dashed border-slate-300">
             <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -316,58 +295,25 @@ export default function App() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredItems.map((item) => (
-              <div key={item.id} className="bg-white rounded-xl shadow-sm hover:shadow-md transition border border-slate-100 overflow-hidden flex flex-col">
-                {/* Image Area */}
-                <div className="h-40 w-full bg-slate-100 relative group overflow-hidden">
-                  <img 
-                    src={item.image} 
-                    alt={item.name}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+              <div key={item.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-md transition">
+                <div className="h-48 w-full bg-white relative group border-b border-slate-50">
+                  <img src={item.image} alt={item.name} className="w-full h-full object-contain p-2" 
                     onError={(e) => {
                       e.target.onerror = null;
                       e.target.src = 'https://via.placeholder.com/300x200?text=No+Image';
                     }}
                   />
-                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button 
-                      onClick={() => handleDeleteItem(item.id)}
-                      className="bg-white/90 p-2 rounded-full text-red-500 hover:bg-red-500 hover:text-white shadow-sm transition"
-                      title="Xóa linh kiện"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+                  <button onClick={() => handleDeleteItem(item.id)} className="absolute top-2 right-2 bg-white p-2 rounded-full text-red-500 shadow opacity-0 group-hover:opacity-100 transition hover:bg-red-50" title="Xóa"><Trash2 size={18} /></button>
                 </div>
-
-                {/* Content Area */}
                 <div className="p-4 flex-1 flex flex-col justify-between">
                   <div>
-                    <h3 className="font-bold text-slate-800 text-lg mb-1 line-clamp-2">{item.name}</h3>
-                    <p className="text-xs text-slate-400 mb-3">ID: {item.id.slice(0,8)}...</p>
+                    <h3 className="font-bold text-slate-800 text-lg line-clamp-2 mb-1">{item.name}</h3>
+                    <p className="text-xs text-slate-400 mb-2">ID: {item.id.slice(0,8)}...</p>
                   </div>
-                  
                   <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <span className="text-xs font-semibold text-slate-500 uppercase">Số lượng</span>
-                    <div className="flex items-center gap-3">
-                      <button 
-                        onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)}
-                        className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 transition disabled:opacity-50"
-                        disabled={item.quantity <= 0}
-                      >
-                        <Minus size={14} />
-                      </button>
-                      
-                      <span className={`font-mono font-bold text-lg ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                        {item.quantity}
-                      </span>
-                      
-                      <button 
-                        onClick={() => handleUpdateQuantity(item.id, item.quantity, 1)}
-                        className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 transition"
-                      >
-                        <Plus size={14} />
-                      </button>
-                    </div>
+                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)} className="w-8 h-8 bg-white border rounded-full flex items-center justify-center hover:bg-slate-200 text-slate-600 disabled:opacity-50" disabled={item.quantity <= 0}><Minus size={16}/></button>
+                    <span className={`font-mono font-bold text-lg ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span>
+                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity, 1)} className="w-8 h-8 bg-white border rounded-full flex items-center justify-center hover:bg-slate-200 text-slate-600"><Plus size={16}/></button>
                   </div>
                 </div>
               </div>
