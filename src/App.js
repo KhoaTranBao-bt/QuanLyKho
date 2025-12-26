@@ -22,9 +22,9 @@ import {
   Image as ImageIcon, Loader2, X, Check, AlertCircle 
 } from 'lucide-react';
 
-// --- THƯ VIỆN CẮT ẢNH MỚI (KÉO THẢ TỰ DO) ---
+// --- THƯ VIỆN CẮT ẢNH ---
 import ReactCrop from 'react-image-crop';
-import 'react-image-crop/dist/ReactCrop.css'; // File style bắt buộc
+import 'react-image-crop/dist/ReactCrop.css'; 
 import getCroppedImg from './cropUtils'; 
 
 // --- CẤU HÌNH FIREBASE ---
@@ -61,13 +61,12 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
-  // --- CROPPER STATE MỚI ---
+  // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
-  // aspect: undefined để cho phép kéo tự do
   const [crop, setCrop] = useState({ unit: '%', width: 50, aspect: undefined }); 
   const [completedCrop, setCompletedCrop] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
-  const imgRef = useRef(null); // Tham chiếu đến ảnh gốc để cắt
+  const imgRef = useRef(null); 
 
   // Auth
   useEffect(() => {
@@ -96,7 +95,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // --- LOGIC ẢNH MỚI ---
+  // --- LOGIC ẢNH ---
   const onFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
@@ -109,7 +108,6 @@ export default function App() {
         setImageSrc(reader.result);
         setIsCropping(true); 
         setError('');
-        // Reset crop về mặc định (giữa ảnh)
         setCrop({ unit: '%', width: 50, x: 25, y: 25, aspect: undefined }); 
       });
       reader.readAsDataURL(file);
@@ -121,12 +119,10 @@ export default function App() {
   };
 
   const showCroppedImage = async () => {
-    // Kiểm tra xem đã chọn vùng chưa
     if (!completedCrop || !imgRef.current || completedCrop.width === 0 || completedCrop.height === 0) {
       setError("Vui lòng kéo khung để chọn vùng ảnh cần lấy.");
       return;
     }
-    
     try {
       const croppedImageBase64 = await getCroppedImg(imgRef.current, completedCrop, 'newFile.jpeg');
       setNewItemImage(croppedImageBase64);
@@ -138,7 +134,6 @@ export default function App() {
     }
   };
 
-  // Upload Cloudinary
   const uploadToCloudinary = async (base64Image) => {
     const formData = new FormData();
     formData.append("file", base64Image);
@@ -185,10 +180,19 @@ export default function App() {
     }
   };
 
+  // --- HÀM CẬP NHẬT SỐ LƯỢNG (Đã thêm xác nhận) ---
   const handleUpdateQuantity = async (id, qty, change) => {
-    if (qty + change >= 0) {
-      try { await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: qty + change }); } 
-      catch (err) { console.error(err); }
+    if (qty + change < 0) return; // Không cho âm
+
+    // Hiện bảng hỏi xác nhận
+    const isConfirmed = window.confirm("Bạn có chắc chắn muốn thay đổi số lượng không?");
+    
+    if (isConfirmed) {
+      try { 
+        await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: qty + change }); 
+      } catch (err) { 
+        console.error(err); 
+      }
     }
   };
 
@@ -221,19 +225,19 @@ export default function App() {
             
             {isCropping ? (
               <div className="flex flex-col gap-4 animate-in fade-in">
-                {/* --- KHUNG CROP MỚI (ReactCrop) --- */}
-                <div className="relative w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl flex justify-center p-4">
+                {/* --- KHUNG CROP THU NHỎ LẠI (h-80 = 320px) --- */}
+                <div className="relative h-80 w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl flex justify-center items-center p-4">
                   <ReactCrop 
                     crop={crop} 
                     onChange={(c) => setCrop(c)} 
                     onComplete={(c) => setCompletedCrop(c)}
-                    aspect={undefined} // Quan trọng: Cho phép kéo tự do
+                    aspect={undefined} 
                   >
                     <img 
                       src={imageSrc} 
                       alt="Upload" 
                       onLoad={(e) => onLoad(e.target)} 
-                      style={{ maxHeight: '70vh', objectFit: 'contain' }} 
+                      style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} 
                     />
                   </ReactCrop>
                 </div>
@@ -278,7 +282,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Danh sách linh kiện */}
         <div className="relative mb-8">
           <input type="text" placeholder="Tìm kiếm nhanh..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" />
           <Search className="absolute left-4 top-4.5 text-slate-400 w-6 h-6" />
@@ -300,7 +303,7 @@ export default function App() {
                 <div className="p-5 flex-1 flex flex-col justify-between">
                   <div className="mb-4">
                     <h3 className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1">{item.name}</h3>
-                    <p className="text-xs text-slate-400 font-mono">#{item.id.slice(0,6)}</p>
+                    {/* --- ĐÃ XÓA DÒNG MÃ ID (Dấu #) TẠI ĐÂY --- */}
                   </div>
                   <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
                     <button onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)} className="w-10 h-10 bg-white border border-slate-200 rounded-lg flex items-center justify-center hover:bg-blue-50 text-slate-600 disabled:opacity-30 transition shadow-sm" disabled={item.quantity <= 0}><Minus size={18}/></button>
