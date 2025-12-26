@@ -231,9 +231,14 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Cột Trái: Ảnh */}
-              <div className="bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-inner flex items-center justify-center h-[400px] lg:h-[600px]">
-                <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-full object-contain" />
+              {/* --- CỘT TRÁI: ẢNH (ĐÃ CẬP NHẬT BACKGROUND MỜ) --- */}
+              <div className="relative bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 shadow-inner flex items-center justify-center h-[400px] lg:h-[600px]">
+                {/* Lớp nền mờ (Blurred Background) */}
+                <div className="absolute inset-0 z-0">
+                  <img src={selectedItem.image} className="w-full h-full object-cover opacity-30 blur-2xl scale-110" alt="background" />
+                </div>
+                {/* Ảnh chính (Main Image) */}
+                <img src={selectedItem.image} alt={selectedItem.name} className="relative z-10 w-full h-full object-contain drop-shadow-xl p-4" />
               </div>
 
               {/* Cột Phải: Thông tin */}
@@ -365,7 +370,6 @@ export default function App() {
         )}
 
         <div className="relative mb-8">
-          {/* --- ĐÃ FIX: Icon Search căn giữa --- */}
           <input type="text" placeholder="Tìm kiếm nhanh..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" />
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-6 h-6" />
         </div>
