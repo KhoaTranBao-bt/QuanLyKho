@@ -20,10 +20,10 @@ import {
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
   Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3 
-} from 'lucide-react'; // Đã thêm icon Edit3
+} from 'lucide-react';
 
 // --- THƯ VIỆN CẮT ẢNH ---
-import ReactCrop from 'react-image-crop';
+import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css'; 
 import getCroppedImg from './cropUtils'; 
 
@@ -61,12 +61,13 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   
-  // --- STATE QUẢN LÝ VIỆC SỬA SỐ LƯỢNG ---
-  const [editingId, setEditingId] = useState(null); // ID của món hàng đang được sửa
+  // --- STATE QUẢN LÝ SỬA SỐ LƯỢNG (MỚI) ---
+  const [editingId, setEditingId] = useState(null); 
+  const [editQtyValue, setEditQtyValue] = useState(0); // Biến tạm để lưu số lượng khi đang sửa
 
   // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
-  const [crop, setCrop] = useState({ unit: '%', width: 50, aspect: undefined }); 
+  const [crop, setCrop] = useState({ unit: '%', width: 100, height: 100, x: 0, y: 0 }); // Mặc định full ảnh
   const [completedCrop, setCompletedCrop] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
   const imgRef = useRef(null); 
@@ -111,7 +112,8 @@ export default function App() {
         setImageSrc(reader.result);
         setIsCropping(true); 
         setError('');
-        setCrop({ unit: '%', width: 50, x: 25, y: 25, aspect: undefined }); 
+        // Mặc định crop full ảnh khi mới mở
+        setCrop({ unit: '%', width: 100, height: 100, x: 0, y: 0, aspect: undefined }); 
       });
       reader.readAsDataURL(file);
     }
@@ -119,11 +121,17 @@ export default function App() {
 
   const onLoad = (img) => {
     imgRef.current = img;
+    // Tự động set khung crop bao trùm toàn bộ ảnh theo tỉ lệ ảnh
+    // width: 100, height: 100 (unit: %) sẽ tự động ôm sát ảnh dù là ảnh dọc hay ngang
+    setCrop({ unit: '%', width: 100, height: 100, x: 0, y: 0 });
   };
 
   const showCroppedImage = async () => {
     if (!completedCrop || !imgRef.current || completedCrop.width === 0 || completedCrop.height === 0) {
-      setError("Vui lòng kéo khung để chọn vùng ảnh cần lấy.");
+      // Nếu người dùng không kéo gì cả, mặc định lấy toàn bộ ảnh
+      setNewItemImage(imageSrc); // Dùng luôn ảnh gốc (preview base64)
+      setIsCropping(false);
+      setImageSrc(null);
       return;
     }
     try {
@@ -152,13 +160,11 @@ export default function App() {
     e.preventDefault();
     if (!newItemName.trim() || !user) return;
     
-    // --- 1. CHECK TRÙNG TÊN (LOGIC MỚI) ---
+    // Check trùng tên
     const normalizedNewName = newItemName.trim().toLowerCase();
     const isDuplicate = items.some(item => item.name.toLowerCase() === normalizedNewName);
-    
     if (isDuplicate) {
       setError("Linh kiện này tên đã tồn tại trong kho rồi!");
-      // Tự động cuộn lên trên để người dùng thấy lỗi
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -195,13 +201,45 @@ export default function App() {
     }
   };
 
-  const handleUpdateQuantity = async (id, qty, change) => {
-    if (qty + change < 0) return;
+  // --- LOGIC SỬA SỐ LƯỢNG MỚI ---
+  
+  // 1. Bắt đầu sửa: Lưu ID và lấy số lượng hiện tại ra biến tạm
+  const startEditing = (item) => {
+    setEditingId(item.id);
+    setEditQtyValue(item.quantity);
+  };
+
+  // 2. Thay đổi giá trị biến tạm (Local State) - Chưa lưu database
+  const handleEditChange = (value) => {
+    // Chỉ cho nhập số dương
+    const newValue = parseInt(value);
+    if (!isNaN(newValue) && newValue >= 0) {
+      setEditQtyValue(newValue);
+    } else if (value === "") {
+      setEditQtyValue(""); // Cho phép xóa trắng để gõ lại
+    }
+  };
+
+  const increaseQty = () => setEditQtyValue(prev => (prev === "" ? 1 : prev + 1));
+  const decreaseQty = () => setEditQtyValue(prev => (prev === "" || prev <= 0 ? 0 : prev - 1));
+
+  // 3. Lưu chính thức vào Firebase
+  const saveQuantity = async (id) => {
+    if (editQtyValue === "" || editQtyValue < 0) {
+        alert("Số lượng không hợp lệ!");
+        return;
+    }
     try { 
-      await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: qty + change }); 
+      await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: parseInt(editQtyValue) }); 
+      setEditingId(null); // Thoát chế độ sửa
     } catch (err) { 
       console.error(err); 
     }
+  };
+
+  // 4. Hủy bỏ (Không lưu)
+  const cancelEditing = () => {
+    setEditingId(null);
   };
 
   const filteredItems = items.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -233,7 +271,8 @@ export default function App() {
             
             {isCropping ? (
               <div className="flex flex-col gap-4 animate-in fade-in">
-                <div className="relative h-80 w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl flex justify-center items-center p-4">
+                {/* --- KHUNG CROP TỰ ĐỘNG PHỦ KÍN ẢNH --- */}
+                <div className="relative h-96 w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl flex justify-center items-center p-4">
                   <ReactCrop 
                     crop={crop} 
                     onChange={(c) => setCrop(c)} 
@@ -312,27 +351,38 @@ export default function App() {
                     <h3 className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1">{item.name}</h3>
                   </div>
                   
-                  {/* --- KHU VỰC ĐIỀU CHỈNH SỐ LƯỢNG (LOGIC MỚI) --- */}
+                  {/* --- GIAO DIỆN SỬA SỐ LƯỢNG MỚI (INPUT + NÚT BẤM) --- */}
                   <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 min-h-[60px]">
                     {editingId === item.id ? (
-                      // CHẾ ĐỘ SỬA: Hiện dấu -, Số, Dấu +, Nút Xong
-                      <div className="flex items-center justify-between w-full animate-in fade-in duration-200">
-                        <button onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)} className="w-10 h-10 bg-white border border-red-200 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-500 shadow-sm"><Minus size={18}/></button>
-                        <span className="font-mono font-bold text-3xl text-slate-800 mx-2">{item.quantity}</span>
-                        <button onClick={() => handleUpdateQuantity(item.id, item.quantity, 1)} className="w-10 h-10 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm"><Plus size={18}/></button>
+                      <div className="flex items-center justify-between w-full animate-in fade-in duration-200 gap-2">
+                        {/* Nút Trừ */}
+                        <button onClick={decreaseQty} className="w-10 h-10 flex-shrink-0 bg-white border border-red-200 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-500 shadow-sm transition"><Minus size={18}/></button>
                         
-                        {/* Nút Hoàn Tất (Check) */}
-                        <button onClick={() => setEditingId(null)} className="ml-2 bg-blue-600 text-white w-10 h-10 rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition" title="Hoàn tất"><Check size={18}/></button>
+                        {/* Ô Nhập Liệu */}
+                        <input 
+                           type="number" 
+                           value={editQtyValue} 
+                           onChange={(e) => handleEditChange(e.target.value)}
+                           className="w-full h-10 text-center font-mono font-bold text-2xl bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+                        />
+                        
+                        {/* Nút Cộng */}
+                        <button onClick={increaseQty} className="w-10 h-10 flex-shrink-0 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm transition"><Plus size={18}/></button>
+                        
+                        {/* Nút Lưu (Check) */}
+                        <button onClick={() => saveQuantity(item.id)} className="w-10 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition" title="Lưu"><Check size={18}/></button>
+                        
+                        {/* Nút Hủy (X) */}
+                         <button onClick={cancelEditing} className="w-10 h-10 flex-shrink-0 bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-300 transition" title="Hủy"><X size={18}/></button>
                       </div>
                     ) : (
-                      // CHẾ ĐỘ XEM: Chỉ hiện số và nút Sửa
                       <div className="flex items-center justify-between w-full">
                          <div className="flex flex-col">
                             <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Số lượng</span>
                             <span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span>
                          </div>
-                         <button onClick={() => setEditingId(item.id)} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center gap-2">
-                            <Edit3 size={16}/> Thay đổi
+                         <button onClick={() => startEditing(item)} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center gap-2">
+                            <Edit3 size={16}/> Sửa
                          </button>
                       </div>
                     )}
