@@ -19,8 +19,8 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle 
-} from 'lucide-react';
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3 
+} from 'lucide-react'; // Đã thêm icon Edit3
 
 // --- THƯ VIỆN CẮT ẢNH ---
 import ReactCrop from 'react-image-crop';
@@ -60,6 +60,9 @@ export default function App() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  
+  // --- STATE QUẢN LÝ VIỆC SỬA SỐ LƯỢNG ---
+  const [editingId, setEditingId] = useState(null); // ID của món hàng đang được sửa
 
   // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
@@ -148,6 +151,18 @@ export default function App() {
   const handleAddItem = async (e) => {
     e.preventDefault();
     if (!newItemName.trim() || !user) return;
+    
+    // --- 1. CHECK TRÙNG TÊN (LOGIC MỚI) ---
+    const normalizedNewName = newItemName.trim().toLowerCase();
+    const isDuplicate = items.some(item => item.name.toLowerCase() === normalizedNewName);
+    
+    if (isDuplicate) {
+      setError("Linh kiện này tên đã tồn tại trong kho rồi!");
+      // Tự động cuộn lên trên để người dùng thấy lỗi
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     setIsUploading(true);
     try {
       let finalImageUrl = 'https://via.placeholder.com/300?text=No+Image'; 
@@ -180,19 +195,12 @@ export default function App() {
     }
   };
 
-  // --- HÀM CẬP NHẬT SỐ LƯỢNG (Đã thêm xác nhận) ---
   const handleUpdateQuantity = async (id, qty, change) => {
-    if (qty + change < 0) return; // Không cho âm
-
-    // Hiện bảng hỏi xác nhận
-    const isConfirmed = window.confirm("Bạn có chắc chắn muốn thay đổi số lượng không?");
-    
-    if (isConfirmed) {
-      try { 
-        await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: qty + change }); 
-      } catch (err) { 
-        console.error(err); 
-      }
+    if (qty + change < 0) return;
+    try { 
+      await updateDoc(doc(db, COLLECTION_NAME, id), { quantity: qty + change }); 
+    } catch (err) { 
+      console.error(err); 
     }
   };
 
@@ -225,7 +233,6 @@ export default function App() {
             
             {isCropping ? (
               <div className="flex flex-col gap-4 animate-in fade-in">
-                {/* --- KHUNG CROP THU NHỎ LẠI (h-80 = 320px) --- */}
                 <div className="relative h-80 w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl flex justify-center items-center p-4">
                   <ReactCrop 
                     crop={crop} 
@@ -303,12 +310,32 @@ export default function App() {
                 <div className="p-5 flex-1 flex flex-col justify-between">
                   <div className="mb-4">
                     <h3 className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1">{item.name}</h3>
-                    {/* --- ĐÃ XÓA DÒNG MÃ ID (Dấu #) TẠI ĐÂY --- */}
                   </div>
-                  <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)} className="w-10 h-10 bg-white border border-slate-200 rounded-lg flex items-center justify-center hover:bg-blue-50 text-slate-600 disabled:opacity-30 transition shadow-sm" disabled={item.quantity <= 0}><Minus size={18}/></button>
-                    <span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span>
-                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity, 1)} className="w-10 h-10 bg-white border border-slate-200 rounded-lg flex items-center justify-center hover:bg-blue-50 text-slate-600 transition shadow-sm"><Plus size={18}/></button>
+                  
+                  {/* --- KHU VỰC ĐIỀU CHỈNH SỐ LƯỢNG (LOGIC MỚI) --- */}
+                  <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 min-h-[60px]">
+                    {editingId === item.id ? (
+                      // CHẾ ĐỘ SỬA: Hiện dấu -, Số, Dấu +, Nút Xong
+                      <div className="flex items-center justify-between w-full animate-in fade-in duration-200">
+                        <button onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)} className="w-10 h-10 bg-white border border-red-200 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-500 shadow-sm"><Minus size={18}/></button>
+                        <span className="font-mono font-bold text-3xl text-slate-800 mx-2">{item.quantity}</span>
+                        <button onClick={() => handleUpdateQuantity(item.id, item.quantity, 1)} className="w-10 h-10 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm"><Plus size={18}/></button>
+                        
+                        {/* Nút Hoàn Tất (Check) */}
+                        <button onClick={() => setEditingId(null)} className="ml-2 bg-blue-600 text-white w-10 h-10 rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition" title="Hoàn tất"><Check size={18}/></button>
+                      </div>
+                    ) : (
+                      // CHẾ ĐỘ XEM: Chỉ hiện số và nút Sửa
+                      <div className="flex items-center justify-between w-full">
+                         <div className="flex flex-col">
+                            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Số lượng</span>
+                            <span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span>
+                         </div>
+                         <button onClick={() => setEditingId(item.id)} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center gap-2">
+                            <Edit3 size={16}/> Thay đổi
+                         </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
