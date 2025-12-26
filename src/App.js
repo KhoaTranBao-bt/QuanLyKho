@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft 
 } from 'lucide-react';
 
 // --- THƯ VIỆN CẮT ẢNH ---
@@ -70,12 +70,6 @@ export default function App() {
   const [isEditingDesc, setIsEditingDesc] = useState(false); 
   const [descValue, setDescValue] = useState(""); 
 
-  // --- STATE SOI ẢNH (SMART COVER) ---
-  const [baseScale, setBaseScale] = useState(1); // Tỉ lệ cơ bản để lấp đầy khung
-  const [viewPosition, setViewPosition] = useState({ x: 0, y: 0 }); 
-  const [isDraggingView, setIsDraggingView] = useState(false); 
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); 
-  
   // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
   const [crop, setCrop] = useState({ unit: '%', width: 100, height: 100, x: 0, y: 0 }); 
@@ -113,56 +107,6 @@ export default function App() {
     });
     return () => unsubscribe();
   }, [user, selectedItem]);
-
-  // Reset view khi mở ảnh mới
-  useEffect(() => {
-    if (selectedItem) {
-      setViewPosition({ x: 0, y: 0 });
-      setBaseScale(1); // Reset scale về mặc định trước khi tính toán
-    }
-  }, [selectedItem]);
-
-  // --- LOGIC TỰ ĐỘNG TÍNH SCALE ĐỂ TRÀN VIỀN (SMART COVER) ---
-  const handleDetailImageLoad = (e) => {
-    const img = e.target;
-    const container = img.parentElement; 
-    
-    const containerW = container.offsetWidth;
-    const containerH = container.offsetHeight;
-    const imgNaturalW = img.naturalWidth;
-    const imgNaturalH = img.naturalHeight;
-
-    // Tính tỉ lệ cần thiết để lấp đầy
-    const scaleX = containerW / imgNaturalW;
-    const scaleY = containerH / imgNaturalH;
-
-    // Lấy tỉ lệ LỚN NHẤT để đảm bảo ảnh PHỦ KÍN khung (Cover)
-    // Nếu dùng Math.min thì ảnh sẽ nằm lọt thỏm (Contain)
-    const scaleToCover = Math.max(scaleX, scaleY);
-
-    setBaseScale(scaleToCover);
-  };
-
-  // --- LOGIC KÉO THẢ ẢNH ---
-  const handleViewMouseDown = (e) => {
-    e.preventDefault();
-    setIsDraggingView(true);
-    // Lưu vị trí chuột so với vị trí hiện tại của ảnh
-    setDragStart({ x: e.clientX - viewPosition.x, y: e.clientY - viewPosition.y });
-  };
-
-  const handleViewMouseMove = (e) => {
-    if (!isDraggingView) return;
-    e.preventDefault();
-    setViewPosition({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y
-    });
-  };
-
-  const handleViewMouseUp = () => {
-    setIsDraggingView(false);
-  };
 
   // --- LOGIC UPLOAD & CROP ---
   const onFileChange = (e) => {
@@ -287,32 +231,18 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               
-              {/* --- CỘT TRÁI: ẢNH TRÀN VIỀN (Smart Cover) --- */}
-              <div className="flex flex-col gap-3">
-                <div 
-                  className={`bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative group ${isDraggingView ? 'cursor-grabbing' : 'cursor-grab'}`}
-                  onMouseDown={handleViewMouseDown}
-                  onMouseMove={handleViewMouseMove}
-                  onMouseUp={handleViewMouseUp}
-                  onMouseLeave={handleViewMouseUp}
-                >
-                  {/* Ảnh được căn giữa tuyệt đối */}
-                  <img 
-                    src={selectedItem.image} 
-                    alt={selectedItem.name} 
-                    onLoad={handleDetailImageLoad} 
-                    className="absolute top-1/2 left-1/2 max-w-none transition-transform duration-75 ease-out" 
-                    draggable="false" 
-                    style={{ 
-                      // transform = Căn giữa (-50%) + Scale (Lấp đầy) + Translate (Kéo thả)
-                      transform: `translate(-50%, -50%) scale(${baseScale}) translate(${viewPosition.x / baseScale}px, ${viewPosition.y / baseScale}px)`,
-                    }}
-                  />
-                  
-                  <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full pointer-events-none flex gap-2 items-center opacity-0 group-hover:opacity-100 transition shadow-lg z-10">
-                    <Move size={14} /> Giữ chuột & Kéo để xem
-                  </div>
+              {/* --- CỘT TRÁI: ẢNH HIỂN THỊ TĨNH (TRỌN VẸN) --- */}
+              <div className="relative bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] flex items-center justify-center">
+                {/* Lớp nền mờ (Lấp đầy khoảng trống) */}
+                <div className="absolute inset-0 z-0">
+                  <img src={selectedItem.image} className="w-full h-full object-cover opacity-30 blur-2xl scale-110" alt="background" />
                 </div>
+                {/* Ảnh chính (Trọn vẹn, không cắt) */}
+                <img 
+                  src={selectedItem.image} 
+                  alt={selectedItem.name} 
+                  className="relative z-10 w-full h-full object-contain drop-shadow-xl p-4" 
+                />
               </div>
 
               {/* Cột Phải: Thông tin */}
