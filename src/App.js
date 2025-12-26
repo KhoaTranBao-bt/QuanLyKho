@@ -108,7 +108,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, selectedItem]);
 
-  // --- LOGIC UPLOAD & CROP ---
+  // --- LOGIC ẢNH & CROP ---
   const onFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
@@ -231,17 +231,13 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               
-              {/* --- CỘT TRÁI: ẢNH HIỂN THỊ TĨNH (TRỌN VẸN) --- */}
-              <div className="relative bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] flex items-center justify-center">
-                {/* Lớp nền mờ (Lấp đầy khoảng trống) */}
-                <div className="absolute inset-0 z-0">
-                  <img src={selectedItem.image} className="w-full h-full object-cover opacity-30 blur-2xl scale-110" alt="background" />
-                </div>
-                {/* Ảnh chính (Trọn vẹn, không cắt) */}
+              {/* --- CỘT TRÁI: ẢNH LẤP ĐẦY (OBJECT-COVER) --- */}
+              <div className="bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px]">
+                {/* object-cover: Lấp đầy khung, w-full h-full: Kích thước 100% */}
                 <img 
                   src={selectedItem.image} 
                   alt={selectedItem.name} 
-                  className="relative z-10 w-full h-full object-contain drop-shadow-xl p-4" 
+                  className="w-full h-full object-cover" 
                 />
               </div>
 
