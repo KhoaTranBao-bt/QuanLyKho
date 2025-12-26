@@ -65,10 +65,10 @@ export default function App() {
   const [editingId, setEditingId] = useState(null); 
   const [editQtyValue, setEditQtyValue] = useState(0);
 
-  // --- STATE CHI TIẾT SẢN PHẨM (MỚI) ---
-  const [selectedItem, setSelectedItem] = useState(null); // Lưu món hàng đang xem chi tiết
-  const [isEditingDesc, setIsEditingDesc] = useState(false); // Chế độ sửa mô tả
-  const [descValue, setDescValue] = useState(""); // Nội dung mô tả đang soạn thảo
+  // --- STATE CHI TIẾT SẢN PHẨM ---
+  const [selectedItem, setSelectedItem] = useState(null); 
+  const [isEditingDesc, setIsEditingDesc] = useState(false); 
+  const [descValue, setDescValue] = useState(""); 
 
   // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
@@ -97,7 +97,6 @@ export default function App() {
       setItems(loadedItems);
       setLoading(false);
       
-      // Nếu đang xem chi tiết món nào, cập nhật luôn data mới nhất cho món đó (Realtime)
       if (selectedItem) {
         const updatedItem = loadedItems.find(i => i.id === selectedItem.id);
         if (updatedItem) setSelectedItem(updatedItem);
@@ -107,7 +106,7 @@ export default function App() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [user, selectedItem]); // Thêm selectedItem vào dependency để auto update
+  }, [user, selectedItem]);
 
   // --- LOGIC ẢNH & CROP ---
   const onFileChange = (e) => {
@@ -171,7 +170,7 @@ export default function App() {
         name: newItemName,
         quantity: parseInt(newItemQty),
         image: finalImageUrl,
-        description: "", // Mặc định mô tả trống
+        description: "",
         createdAt: serverTimestamp(),
         createdBy: user.uid
       });
@@ -181,7 +180,7 @@ export default function App() {
 
   const handleDeleteItem = async (id) => {
     if (window.confirm("Xóa linh kiện này?")) {
-      try { await deleteDoc(doc(db, COLLECTION_NAME, id)); setSelectedItem(null); } // Xóa xong thì thoát trang chi tiết
+      try { await deleteDoc(doc(db, COLLECTION_NAME, id)); setSelectedItem(null); }
       catch (err) { setError("Lỗi xóa."); }
     }
   };
@@ -197,7 +196,7 @@ export default function App() {
   // --- LOGIC TRANG CHI TIẾT & MÔ TẢ ---
   const openDetail = (item) => {
     setSelectedItem(item);
-    setDescValue(item.description || ""); // Load mô tả cũ nếu có
+    setDescValue(item.description || ""); 
     setIsEditingDesc(false);
   };
 
@@ -215,7 +214,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10">
       
-      {/* 1. TRANG CHI TIẾT SẢN PHẨM (Overlay Full Màn Hình) */}
+      {/* 1. TRANG CHI TIẾT SẢN PHẨM (Overlay) */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-white overflow-y-auto animate-in slide-in-from-right duration-300">
           <div className="max-w-5xl mx-auto px-4 py-6">
@@ -232,17 +231,17 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Cột Trái: Ảnh Lớn */}
+              {/* Cột Trái: Ảnh */}
               <div className="bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-inner flex items-center justify-center h-[400px] lg:h-[600px]">
                 <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-full object-contain" />
               </div>
 
-              {/* Cột Phải: Thông tin & Mô tả */}
+              {/* Cột Phải: Thông tin */}
               <div className="flex flex-col">
                 <h1 className="text-3xl md:text-4xl font-bold text-slate-800 mb-2">{selectedItem.name}</h1>
                 <p className="text-sm text-slate-400 font-mono mb-6">ID: {selectedItem.id}</p>
 
-                {/* Phần Số Lượng Trong Trang Chi Tiết */}
+                {/* Số Lượng */}
                 <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8">
                    <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span>
                    <div className="flex items-center gap-4">
@@ -251,7 +250,7 @@ export default function App() {
                    </div>
                 </div>
 
-                {/* Phần Mô Tả Sản Phẩm */}
+                {/* Mô Tả */}
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-3">
                     <h2 className="text-xl font-bold flex items-center gap-2 text-slate-700">
@@ -278,7 +277,8 @@ export default function App() {
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm min-h-[200px]">
+                    /* --- KHUNG MÔ TẢ ĐÃ CHỈNH SỬA: CÓ THANH CUỘN (SCROLL) --- */
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">
                       {selectedItem.description ? (
                         <p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">
                           {selectedItem.description}
@@ -295,7 +295,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. TRANG CHỦ (DANH SÁCH) */}
+      {/* 2. TRANG CHỦ */}
       <header className="bg-blue-600 text-white shadow-lg sticky top-0 z-10 px-4 py-4 flex justify-between items-center">
         <div className="flex items-center gap-2"><Package className="w-8 h-8" /><h1 className="text-xl md:text-2xl font-bold">Kho Linh Kiện</h1></div>
         <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-5 py-2.5 rounded-full font-bold flex gap-2 shadow-sm hover:bg-blue-50 transition">
@@ -379,12 +379,7 @@ export default function App() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredItems.map((item) => (
               <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300">
-                
-                {/* ẢNH SẢN PHẨM - BẤM VÀO ĐỂ XEM CHI TIẾT */}
-                <div 
-                   onClick={() => openDetail(item)}
-                   className="h-80 w-full bg-white relative group border-b border-slate-50 p-4 cursor-pointer"
-                >
+                <div onClick={() => openDetail(item)} className="h-80 w-full bg-white relative group border-b border-slate-50 p-4 cursor-pointer">
                   <img src={item.image} alt={item.name} className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} />
                 </div>
 
@@ -393,7 +388,6 @@ export default function App() {
                     <h3 onClick={() => openDetail(item)} className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1 cursor-pointer hover:text-blue-600 transition">{item.name}</h3>
                   </div>
                   
-                  {/* THANH ĐIỀU CHỈNH SỐ LƯỢNG */}
                   <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 min-h-[60px]">
                     {editingId === item.id ? (
                       <div className="flex items-center justify-between w-full animate-in fade-in duration-200 gap-2">
