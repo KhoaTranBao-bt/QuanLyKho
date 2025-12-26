@@ -212,11 +212,11 @@ export default function App() {
             {isCropping ? (
               <div className="flex flex-col gap-4 animate-in fade-in">
                 <div className="relative h-[500px] w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl">
+                  {/* --- ĐÃ XÓA THUỘC TÍNH aspect={4 / 3} Ở ĐÂY --- */}
                   <Cropper
                     image={imageSrc}
                     crop={crop}
                     zoom={zoom}
-                    aspect={4 / 3}
                     onCropChange={setCrop}
                     onCropComplete={onCropComplete}
                     onZoomChange={setZoom}
@@ -283,7 +283,6 @@ export default function App() {
             {filteredItems.map((item) => (
               <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300">
                 
-                {/* --- KHUNG ẢNH DANH SÁCH: TĂNG GẤP ĐÔI (h-80) --- */}
                 <div className="h-80 w-full bg-white relative group border-b border-slate-50 p-4">
                   <img src={item.image} alt={item.name} className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105" 
                     onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} />
