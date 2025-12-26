@@ -70,11 +70,12 @@ export default function App() {
   const [isEditingDesc, setIsEditingDesc] = useState(false); 
   const [descValue, setDescValue] = useState(""); 
 
-  // --- STATE CHO VIỆC SOI ẢNH (ZOOM & PAN) ---
-  const [viewScale, setViewScale] = useState(1); // Độ phóng to
-  const [viewPosition, setViewPosition] = useState({ x: 0, y: 0 }); // Vị trí ảnh (X, Y)
-  const [isDraggingView, setIsDraggingView] = useState(false); // Đang kéo chuột hay không
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Điểm bắt đầu kéo
+  // --- STATE SOI ẢNH (ZOOM & PAN) ---
+  const [viewScale, setViewScale] = useState(1); 
+  const [viewPosition, setViewPosition] = useState({ x: 0, y: 0 }); 
+  const [isDraggingView, setIsDraggingView] = useState(false); 
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); 
+  const detailImgRef = useRef(null); // Ref để tham chiếu ảnh trong trang chi tiết
 
   // --- CROPPER STATE ---
   const [imageSrc, setImageSrc] = useState(null);
@@ -114,26 +115,51 @@ export default function App() {
     return () => unsubscribe();
   }, [user, selectedItem]);
 
-  // Reset vị trí ảnh khi mở sản phẩm mới
+  // Reset view khi mở ảnh mới
   useEffect(() => {
     if (selectedItem) {
-      setViewScale(1);
       setViewPosition({ x: 0, y: 0 });
+      // Scale sẽ được tính toán lại trong hàm handleDetailImageLoad
     }
   }, [selectedItem]);
 
-  // --- LOGIC KÉO THẢ ẢNH (PANNING) ---
+  // --- LOGIC TỰ ĐỘNG TÍNH SCALE ĐỂ TRÀN VIỀN (SMART COVER) ---
+  const handleDetailImageLoad = (e) => {
+    const img = e.target;
+    const container = img.parentElement; // Lấy khung chứa
+    
+    // Kích thước khung chứa
+    const containerW = container.offsetWidth;
+    const containerH = container.offsetHeight;
+    
+    // Kích thước hiển thị thực tế của ảnh (đang ở chế độ object-contain)
+    const imgW = img.width;
+    const imgH = img.height;
+
+    // Tính tỉ lệ cần phóng to để lấp đầy chiều rộng hoặc chiều cao
+    const scaleX = containerW / imgW;
+    const scaleY = containerH / imgH;
+
+    // Lấy tỉ lệ lớn hơn để đảm bảo LẤP ĐẦY (Cover)
+    // Nếu muốn vừa khít (Contain) thì dùng Math.min
+    let optimalScale = Math.max(scaleX, scaleY);
+    
+    // Giới hạn không cho nhỏ hơn 1 (để không bị bé quá)
+    if (optimalScale < 1) optimalScale = 1;
+
+    setViewScale(optimalScale);
+  };
+
+  // --- LOGIC KÉO THẢ ẢNH ---
   const handleViewMouseDown = (e) => {
     e.preventDefault();
     setIsDraggingView(true);
-    // Lưu vị trí chuột ban đầu trừ đi vị trí hiện tại của ảnh để tính offset chuẩn
     setDragStart({ x: e.clientX - viewPosition.x, y: e.clientY - viewPosition.y });
   };
 
   const handleViewMouseMove = (e) => {
     if (!isDraggingView) return;
     e.preventDefault();
-    // Tính toán vị trí mới
     setViewPosition({
       x: e.clientX - dragStart.x,
       y: e.clientY - dragStart.y
@@ -144,7 +170,7 @@ export default function App() {
     setIsDraggingView(false);
   };
 
-  // --- LOGIC ẢNH & CROP ---
+  // --- LOGIC UPLOAD & CROP ---
   const onFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
@@ -254,7 +280,6 @@ export default function App() {
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-white overflow-y-auto animate-in slide-in-from-right duration-300">
           <div className="max-w-5xl mx-auto px-4 py-6">
-            {/* Header Chi tiết */}
             <div className="flex items-center justify-between mb-6 sticky top-0 bg-white/95 backdrop-blur py-4 border-b border-slate-100 z-10">
               <button onClick={() => setSelectedItem(null)} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold transition">
                 <ArrowLeft size={24}/> Quay lại
@@ -268,46 +293,51 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               
-              {/* --- CỘT TRÁI: ẢNH SOI ĐƯỢC (ZOOM & PAN) --- */}
+              {/* --- CỘT TRÁI: ẢNH SOI ĐƯỢC --- */}
               <div className="flex flex-col gap-3">
                 <div 
-                  className="bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative cursor-move"
+                  className="bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative cursor-move group"
                   onMouseDown={handleViewMouseDown}
                   onMouseMove={handleViewMouseMove}
                   onMouseUp={handleViewMouseUp}
                   onMouseLeave={handleViewMouseUp}
                 >
-                  {/* Ảnh chính có thể di chuyển và phóng to */}
+                  {/* QUAN TRỌNG: 
+                      - object-contain: Để ảnh giữ nguyên tỉ lệ gốc, không bị méo.
+                      - width/height 100%: Để làm cơ sở tính toán.
+                      - transform scale: Sẽ phóng to nó lên mức "Cover" (lấp đầy) ngay khi load xong.
+                  */}
                   <img 
+                    ref={detailImgRef}
                     src={selectedItem.image} 
                     alt={selectedItem.name} 
+                    onLoad={handleDetailImageLoad} // Gọi hàm tính toán scale khi ảnh tải xong
                     className="w-full h-full object-contain transition-transform duration-75 ease-out" 
-                    draggable="false" // Tắt kéo ảnh mặc định của trình duyệt
+                    draggable="false" 
                     style={{ 
                       transform: `translate(${viewPosition.x}px, ${viewPosition.y}px) scale(${viewScale})`,
                       cursor: isDraggingView ? 'grabbing' : 'grab' 
                     }}
                   />
                   
-                  {/* Chỉ dẫn cho người dùng */}
-                  <div className="absolute top-4 right-4 bg-black/50 text-white text-xs px-2 py-1 rounded-full pointer-events-none flex gap-1 items-center">
-                    <Move size={12} /> Giữ chuột để kéo
+                  <div className="absolute top-4 right-4 bg-black/50 text-white text-xs px-2 py-1 rounded-full pointer-events-none flex gap-1 items-center opacity-0 group-hover:opacity-100 transition">
+                    <Move size={12} /> Kéo để xem
                   </div>
                 </div>
 
-                {/* Thanh điều khiển Zoom */}
+                {/* Thanh Zoom */}
                 <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <ZoomIn className="text-slate-400" size={20}/>
                   <input 
                     type="range" 
-                    min="1" 
-                    max="4" 
+                    min="0.5" 
+                    max="5" 
                     step="0.1" 
                     value={viewScale} 
                     onChange={(e) => setViewScale(parseFloat(e.target.value))}
                     className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg cursor-pointer"
                   />
-                  <span className="font-mono font-bold text-slate-500 w-12 text-right">{viewScale}x</span>
+                  <span className="font-mono font-bold text-slate-500 w-12 text-right">{viewScale.toFixed(1)}x</span>
                 </div>
               </div>
 
