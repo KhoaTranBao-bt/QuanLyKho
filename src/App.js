@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -21,7 +21,10 @@ import {
   Plus, Trash2, Search, Package, Minus, Save, 
   Image as ImageIcon, Loader2, X, Check, AlertCircle 
 } from 'lucide-react';
-import Cropper from 'react-easy-crop';
+
+// --- THƯ VIỆN CẮT ẢNH MỚI (KÉO THẢ TỰ DO) ---
+import ReactCrop from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css'; // File style bắt buộc
 import getCroppedImg from './cropUtils'; 
 
 // --- CẤU HÌNH FIREBASE ---
@@ -58,18 +61,19 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
-  // --- CROPPER STATE ---
+  // --- CROPPER STATE MỚI ---
   const [imageSrc, setImageSrc] = useState(null);
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  // aspect: undefined để cho phép kéo tự do
+  const [crop, setCrop] = useState({ unit: '%', width: 50, aspect: undefined }); 
+  const [completedCrop, setCompletedCrop] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
+  const imgRef = useRef(null); // Tham chiếu đến ảnh gốc để cắt
 
   // Auth
   useEffect(() => {
     const initAuth = async () => {
       try { await signInAnonymously(auth); } 
-      catch (err) { console.error("Lỗi xác thực:", err); setError("Lỗi kết nối."); }
+      catch (err) { console.error(err); setError("Lỗi kết nối."); }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
@@ -86,15 +90,14 @@ export default function App() {
       setItems(loadedItems);
       setLoading(false);
     }, (err) => {
-      console.error(err);
       setError("Không thể tải danh sách linh kiện.");
       setLoading(false);
     });
     return () => unsubscribe();
   }, [user]);
 
-  // --- LOGIC ẢNH ---
-  const onFileChange = async (e) => {
+  // --- LOGIC ẢNH MỚI ---
+  const onFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
       if (file.size > 10 * 1024 * 1024) { 
@@ -106,27 +109,34 @@ export default function App() {
         setImageSrc(reader.result);
         setIsCropping(true); 
         setError('');
+        // Reset crop về mặc định (giữa ảnh)
+        setCrop({ unit: '%', width: 50, x: 25, y: 25, aspect: undefined }); 
       });
       reader.readAsDataURL(file);
     }
   };
 
-  const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
-    setCroppedAreaPixels(croppedAreaPixels);
-  }, []);
+  const onLoad = (img) => {
+    imgRef.current = img;
+  };
 
-  const showCroppedImage = useCallback(async () => {
+  const showCroppedImage = async () => {
+    // Kiểm tra xem đã chọn vùng chưa
+    if (!completedCrop || !imgRef.current || completedCrop.width === 0 || completedCrop.height === 0) {
+      setError("Vui lòng kéo khung để chọn vùng ảnh cần lấy.");
+      return;
+    }
+    
     try {
-      const croppedImageBase64 = await getCroppedImg(imageSrc, croppedAreaPixels);
+      const croppedImageBase64 = await getCroppedImg(imgRef.current, completedCrop, 'newFile.jpeg');
       setNewItemImage(croppedImageBase64);
       setIsCropping(false);
       setImageSrc(null);
-      setZoom(1);
     } catch (e) {
       console.error(e);
       setError("Lỗi cắt ảnh.");
     }
-  }, [imageSrc, croppedAreaPixels]);
+  };
 
   // Upload Cloudinary
   const uploadToCloudinary = async (base64Image) => {
@@ -211,26 +221,26 @@ export default function App() {
             
             {isCropping ? (
               <div className="flex flex-col gap-4 animate-in fade-in">
-                <div className="relative h-[500px] w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl">
-                  {/* --- ĐÃ XÓA THUỘC TÍNH aspect={4 / 3} Ở ĐÂY --- */}
-                  <Cropper
-                    image={imageSrc}
-                    crop={crop}
-                    zoom={zoom}
-                    onCropChange={setCrop}
-                    onCropComplete={onCropComplete}
-                    onZoomChange={setZoom}
-                  />
+                {/* --- KHUNG CROP MỚI (ReactCrop) --- */}
+                <div className="relative w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl flex justify-center p-4">
+                  <ReactCrop 
+                    crop={crop} 
+                    onChange={(c) => setCrop(c)} 
+                    onComplete={(c) => setCompletedCrop(c)}
+                    aspect={undefined} // Quan trọng: Cho phép kéo tự do
+                  >
+                    <img 
+                      src={imageSrc} 
+                      alt="Upload" 
+                      onLoad={(e) => onLoad(e.target)} 
+                      style={{ maxHeight: '70vh', objectFit: 'contain' }} 
+                    />
+                  </ReactCrop>
                 </div>
-                <div className="flex flex-col gap-3">
-                   <div className="flex items-center gap-3 px-2">
-                      <span className="text-sm font-bold text-slate-500">Zoom:</span>
-                      <input type="range" value={zoom} min={1} max={3} step={0.1} onChange={(e) => setZoom(e.target.value)} className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg cursor-pointer" />
-                   </div>
-                   <div className="flex justify-between gap-4 mt-2">
-                      <button onClick={() => setIsCropping(false)} className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-slate-300 transition text-lg"><X size={20}/> Hủy</button>
-                      <button onClick={showCroppedImage} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-green-700 transition shadow-lg text-lg"><Check size={20}/> Xong</button>
-                   </div>
+                
+                <div className="flex justify-between gap-4 mt-2">
+                   <button onClick={() => setIsCropping(false)} className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-slate-300 transition text-lg"><X size={20}/> Hủy</button>
+                   <button onClick={showCroppedImage} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-green-700 transition shadow-lg text-lg"><Check size={20}/> Cắt Ảnh Này</button>
                 </div>
               </div>
             ) : (
@@ -268,6 +278,7 @@ export default function App() {
           </div>
         )}
 
+        {/* Danh sách linh kiện */}
         <div className="relative mb-8">
           <input type="text" placeholder="Tìm kiếm nhanh..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" />
           <Search className="absolute left-4 top-4.5 text-slate-400 w-6 h-6" />
@@ -282,19 +293,15 @@ export default function App() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredItems.map((item) => (
               <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300">
-                
                 <div className="h-80 w-full bg-white relative group border-b border-slate-50 p-4">
-                  <img src={item.image} alt={item.name} className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105" 
-                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} />
+                  <img src={item.image} alt={item.name} className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} />
                   <button onClick={() => handleDeleteItem(item.id)} className="absolute top-3 right-3 bg-white/90 backdrop-blur p-2.5 rounded-full text-red-500 shadow-md opacity-0 group-hover:opacity-100 transition hover:bg-red-500 hover:text-white" title="Xóa"><Trash2 size={20} /></button>
                 </div>
-
                 <div className="p-5 flex-1 flex flex-col justify-between">
                   <div className="mb-4">
                     <h3 className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1">{item.name}</h3>
                     <p className="text-xs text-slate-400 font-mono">#{item.id.slice(0,6)}</p>
                   </div>
-                  
                   <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
                     <button onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)} className="w-10 h-10 bg-white border border-slate-200 rounded-lg flex items-center justify-center hover:bg-blue-50 text-slate-600 disabled:opacity-30 transition shadow-sm" disabled={item.quantity <= 0}><Minus size={18}/></button>
                     <span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span>

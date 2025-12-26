@@ -1,37 +1,29 @@
 // File: src/cropUtils.js
-export const createImage = (url) =>
-  new Promise((resolve, reject) => {
-    const image = new Image();
-    image.addEventListener('load', () => resolve(image));
-    image.addEventListener('error', (error) => reject(error));
-    image.setAttribute('crossOrigin', 'anonymous'); 
-    image.src = url;
-  });
 
-export default async function getCroppedImg(imageSrc, pixelCrop) {
-  const image = await createImage(imageSrc);
+export default function getCroppedImg(image, crop, fileName) {
   const canvas = document.createElement('canvas');
+  const scaleX = image.naturalWidth / image.width;
+  const scaleY = image.naturalHeight / image.height;
+  
+  canvas.width = crop.width;
+  canvas.height = crop.height;
   const ctx = canvas.getContext('2d');
 
-  if (!ctx) {
-    return null;
-  }
-
-  canvas.width = pixelCrop.width;
-  canvas.height = pixelCrop.height;
-
+  // Vẽ phần ảnh đã chọn lên canvas
   ctx.drawImage(
     image,
-    pixelCrop.x,
-    pixelCrop.y,
-    pixelCrop.width,
-    pixelCrop.height,
+    crop.x * scaleX,
+    crop.y * scaleY,
+    crop.width * scaleX,
+    crop.height * scaleY,
     0,
     0,
-    pixelCrop.width,
-    pixelCrop.height
+    crop.width,
+    crop.height
   );
 
-  // Xuất ra ảnh Base64 chất lượng 100%
-  return canvas.toDataURL('image/jpeg', 1.0);
+  return new Promise((resolve) => {
+    // Xuất ra ảnh dạng Base64 chất lượng cao
+    resolve(canvas.toDataURL('image/jpeg', 1.0));
+  });
 }
