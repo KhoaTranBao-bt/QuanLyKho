@@ -66,10 +66,10 @@ export default function App() {
   
   // Detail & Edit State
   const [selectedItem, setSelectedItem] = useState(null); 
-  const [isEditingDetail, setIsEditingDetail] = useState(false); // Chế độ sửa thông tin chi tiết (Tên, Ảnh)
+  const [isEditingDetail, setIsEditingDetail] = useState(false); 
   const [editNameValue, setEditNameValue] = useState("");
   const [editDescValue, setEditDescValue] = useState(""); 
-  const [tempDetailImage, setTempDetailImage] = useState(null); // Ảnh tạm khi đang sửa chi tiết (chưa lưu)
+  const [tempDetailImage, setTempDetailImage] = useState(null); 
 
   // Quantity Edit State
   const [editingId, setEditingId] = useState(null); 
@@ -86,7 +86,7 @@ export default function App() {
   const [crop, setCrop] = useState(); 
   const [completedCrop, setCompletedCrop] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
-  const [cropContext, setCropContext] = useState('ADD'); // 'ADD' (thêm mới) hoặc 'EDIT' (sửa chi tiết)
+  const [cropContext, setCropContext] = useState('ADD'); 
   const imgRef = useRef(null); 
 
   // Auth
@@ -112,7 +112,6 @@ export default function App() {
       if (selectedItem) {
         const updatedItem = loadedItems.find(i => i.id === selectedItem.id);
         if (updatedItem) {
-          // Chỉ cập nhật nếu không đang ở chế độ sửa để tránh nhảy dữ liệu khi đang gõ
           if (!isEditingDetail) {
              setSelectedItem(updatedItem);
           }
@@ -124,8 +123,9 @@ export default function App() {
       const loadedZones = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setZones(loadedZones);
     });
+    // --- ĐÃ XÓA 'isEditingDesc' KHỎI DEPENDENCY ARRAY ĐỂ FIX LỖI ---
     return () => { unsubItems(); unsubZones(); };
-  }, [user, selectedItem, isEditingDesc, isEditingDetail]);
+  }, [user, selectedItem, isEditingDetail]);
 
   // --- LOGIC VÙNG (ZONES) ---
   const handleAddZone = async () => {
@@ -163,7 +163,6 @@ export default function App() {
   // --- LOGIC UPLOAD & CROP ---
   function centerAspectCrop(mediaWidth, mediaHeight) { return centerCrop(makeAspectCrop({ unit: '%', width: 90 }, undefined, mediaWidth, mediaHeight), mediaWidth, mediaHeight) }
 
-  // Xử lý khi chọn file (Dùng chung cho cả Thêm Mới và Sửa)
   const handleFileSelect = (e, context = 'ADD') => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
@@ -172,7 +171,7 @@ export default function App() {
       reader.addEventListener('load', () => { 
         setImageSrc(reader.result); 
         setIsCropping(true); 
-        setCropContext(context); // Set ngữ cảnh là ADD hay EDIT
+        setCropContext(context);
         setError(''); 
       });
       reader.readAsDataURL(file);
@@ -180,7 +179,6 @@ export default function App() {
   };
 
   const handlePaste = (e) => {
-    // Chỉ cho paste khi đang mở form thêm mới HOẶC đang sửa chi tiết
     if (!isFormOpen && !isEditingDetail) return;
     
     const items = e.clipboardData.items;
@@ -191,7 +189,7 @@ export default function App() {
         reader.addEventListener('load', () => { 
           setImageSrc(reader.result); 
           setIsCropping(true); 
-          setCropContext(isEditingDetail ? 'EDIT' : 'ADD'); // Tự động nhận diện ngữ cảnh
+          setCropContext(isEditingDetail ? 'EDIT' : 'ADD');
           setError(''); 
         });
         reader.readAsDataURL(file);
@@ -210,7 +208,6 @@ export default function App() {
 
   const showCroppedImage = async () => {
     if (!completedCrop || !imgRef.current || completedCrop.width === 0 || completedCrop.height === 0) {
-      // Fallback ảnh gốc
       if (cropContext === 'ADD') setNewItemImage(imageSrc);
       else setTempDetailImage(imageSrc);
       setIsCropping(false); setImageSrc(null); return;
@@ -220,7 +217,7 @@ export default function App() {
       if (cropContext === 'ADD') {
         setNewItemImage(base64);
       } else {
-        setTempDetailImage(base64); // Lưu vào biến tạm để preview trong trang chi tiết
+        setTempDetailImage(base64);
       }
       setIsCropping(false); setImageSrc(null); 
     } catch (e) { 
@@ -264,14 +261,14 @@ export default function App() {
   // Logic Mở Chi Tiết
   const openDetail = (item) => { 
     setSelectedItem(item); 
-    setEditDescValue(item.description || ""); // Dùng editDescValue thay vì descValue cũ
-    setEditNameValue(item.name); // Init tên để sửa
-    setTempDetailImage(null); // Reset ảnh tạm
-    setIsEditingDetail(false); // Reset chế độ sửa
+    setEditDescValue(item.description || ""); 
+    setEditNameValue(item.name); 
+    setTempDetailImage(null); 
+    setIsEditingDetail(false); 
     setViewPosition({x:0, y:0}); 
   };
 
-  // Logic Lưu Thay Đổi Chi Tiết (Tên, Ảnh, Mô tả)
+  // Logic Lưu Thay Đổi Chi Tiết
   const handleSaveDetailChanges = async () => {
     if (!selectedItem || !user) return;
     if (!editNameValue.trim()) { alert("Tên không được để trống"); return; }
@@ -280,7 +277,6 @@ export default function App() {
     try {
       let finalImageUrl = selectedItem.image;
       
-      // Nếu có ảnh mới (tempDetailImage) thì upload lên Cloudinary
       if (tempDetailImage && tempDetailImage.startsWith('data:image')) {
         finalImageUrl = await uploadToCloudinary(tempDetailImage);
       }
@@ -291,7 +287,6 @@ export default function App() {
         image: finalImageUrl
       });
 
-      // Cập nhật state local ngay lập tức để UX mượt
       setSelectedItem(prev => ({
         ...prev,
         name: editNameValue.trim(),
@@ -326,7 +321,6 @@ export default function App() {
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-white overflow-y-auto animate-in slide-in-from-right duration-300">
           <div className="max-w-5xl mx-auto px-4 py-6">
-            {/* Header Toolbar */}
             <div className="flex items-center justify-between mb-6 sticky top-0 bg-white/95 backdrop-blur py-4 border-b border-slate-100 z-10">
               <button onClick={() => setSelectedItem(null)} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold transition">
                 <ArrowLeft size={24}/> Quay lại
@@ -356,7 +350,7 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* --- ẢNH (Có chế độ Sửa) --- */}
+              {/* --- ẢNH --- */}
               <div className="relative group">
                 <div className={`bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative ${!isEditingDetail ? 'cursor-grab active:cursor-grabbing' : ''}`} 
                      onMouseDown={!isEditingDetail ? handleViewMouseDown : undefined} 
@@ -373,7 +367,6 @@ export default function App() {
                     style={{ transform: `translate(-50%, -50%) scale(${viewScale}) translate(${viewPosition.x / viewScale}px, ${viewPosition.y / viewScale}px)` }} 
                   />
                   
-                  {/* Overlay khi đang Sửa */}
                   {isEditingDetail && (
                     <label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer bg-black/20 hover:bg-black/30 transition z-20">
                       <div className="bg-white p-4 rounded-full shadow-2xl mb-2">
@@ -386,7 +379,7 @@ export default function App() {
                 </div>
               </div>
               
-              {/* --- THÔNG TIN (Có chế độ Sửa) --- */}
+              {/* --- THÔNG TIN --- */}
               <div className="flex flex-col">
                 <div className="mb-4">
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Tên sản phẩm</label>
@@ -404,7 +397,6 @@ export default function App() {
 
                 <p className="text-sm text-slate-400 font-mono mb-4">ID: {selectedItem.id}</p>
 
-                {/* Chuyển vùng */}
                 <div className="mb-6">
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label>
                   <div className="relative">
@@ -416,7 +408,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Số lượng (Vẫn giữ logic sửa riêng biệt cho tiện) */}
                 <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8">
                    <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span>
                    <div className="flex items-center gap-4">
@@ -485,7 +476,6 @@ export default function App() {
         {error && <div className="mb-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded flex items-center gap-2"><AlertCircle size={20} /><p>{error}</p></div>}
         {(loading || isUploading) && (<div className="fixed inset-0 bg-black/30 z-50 flex justify-center items-center backdrop-blur-sm"><div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center"><Loader2 className="animate-spin text-blue-600 w-12 h-12 mb-3" /><p className="font-bold text-lg text-slate-700">{isUploading ? "Đang xử lý ảnh..." : "Đang tải..."}</p></div></div>)}
 
-        {/* --- FORM CROPPER (Dùng chung cho cả Thêm và Sửa) --- */}
         {isCropping && (
           <div className="fixed inset-0 z-[60] bg-black/80 flex justify-center items-center p-4">
              <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden">
