@@ -26,7 +26,7 @@ import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css'; 
 import getCroppedImg from './cropUtils'; 
 
-// --- THƯ VIỆN EXCEL ---
+// --- THƯ VIỆN EXCEL (SHEETJS) ---
 import * as XLSX from 'xlsx';
 
 // --- CẤU HÌNH FIREBASE ---
@@ -154,76 +154,60 @@ export default function App() {
     setCurrentPage(1);
   }, [searchTerm, activeZone]);
 
-  // --- LOGIC XUẤT EXCEL (CẤU HÌNH KÍCH THƯỚC CHUẨN) ---
+  // --- LOGIC XUẤT EXCEL (DÙNG HÀM IMAGE) ---
   const handleExportExcel = () => {
     if (items.length === 0) {
       alert("Kho đang trống!"); return;
     }
 
+    // 1. Chuẩn bị dữ liệu (Khớp với thứ tự cột bạn muốn)
     const dataToExport = items.map(item => {
       const zone = zones.find(z => z.id === item.zoneId);
-      
-      // Tối ưu link ảnh qua Cloudinary: Vuông vức, nền trắng, nhẹ
-      let imageUrl = item.image;
-      if (item.image && item.image.includes('cloudinary.com')) {
-        const parts = item.image.split('/upload/');
-        if (parts.length === 2) {
-          // w_200,h_200: Kích thước 200x200
-          // c_pad: Nếu ảnh gốc không vuông, thêm nền trắng (pad) chứ không cắt mất ảnh
-          // b_white: Nền màu trắng
-          imageUrl = `${parts[0]}/upload/w_200,h_200,c_pad,b_white,q_auto/${parts[1]}`;
-        }
-      }
-
       return {
         'Tên Linh Kiện': item.name,
-        'Hình Ảnh': '', // Chỗ này sẽ chèn công thức
+        'Hình Ảnh': '', // Cột B: Để trống để lát chèn công thức
         'Số Lượng': item.quantity,
         'Thùng Chứa': zone ? zone.name : 'Chưa phân vùng',
         'Vị Trí': zone ? zone.location || 'Chưa cập nhật' : '---',
-        'Link Ảnh Gốc': imageUrl // Dùng link đã tối ưu
+        'Link Ảnh Gốc': item.image // Cột F: Link gốc
       };
     });
 
+    // 2. Tạo Worksheet
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
 
-    // --- 1. CẤU HÌNH ĐỘ RỘNG CỘT (WIDTH) ---
-    // Đơn vị wch xấp xỉ số ký tự.
-    // Cột B (Ảnh) để rộng khoảng 15 ~ 110px để vừa với ảnh vuông
+    // --- CẤU HÌNH CỘT ---
     worksheet['!cols'] = [
       { wch: 30 }, // A: Tên
-      { wch: 15 }, // B: Hình Ảnh (Đủ rộng cho ô vuông)
+      { wch: 500 }, // B: Hình Ảnh (Preview)
       { wch: 10 }, // C: SL
       { wch: 20 }, // D: Thùng
       { wch: 25 }, // E: Vị trí
       { wch: 50 }, // F: Link Gốc
     ];
 
-    // --- 2. CẤU HÌNH CHIỀU CAO DÒNG (HEIGHT) ---
-    // Đơn vị hpt (points). 80 points ~ 106 pixels.
-    // Tạo ra ô vuông ~ 100x100px ở cột B.
-    const rows = [{ hpt: 25 }]; // Header cao một chút
+    // --- CẤU HÌNH DÒNG (Quan trọng: Phải cao lên để hiện ảnh) ---
+    const rows = [{ hpt: 500 }]; // Header height
+    // Duyệt qua từng dòng dữ liệu để set chiều cao và chèn công thức
     for (let i = 0; i < items.length; i++) {
-      rows.push({ hpt: 80 }); // Dòng dữ liệu cao 80pt
+      rows.push({ hpt: 80 }); // Data row height (80 points ~ 106 pixels)
       
-      const rowIndex = i + 2; 
-      const cellRef = `B${rowIndex}`; 
-      const linkRef = `F${rowIndex}`; 
+      const rowIndex = i + 2; // Excel bắt đầu từ dòng 2
+      const cellRef = `B${rowIndex}`; // Ô chứa ảnh
+      const linkRef = `F${rowIndex}`; // Ô chứa link (Cột F)
 
-      // --- 3. CÔNG THỨC ẢNH ---
-      // Mode 1: Fit cell (Vừa khít ô, giữ tỷ lệ)
-      // Vì ta đã chỉnh ô thành hình vuông và ảnh Cloudinary cũng vuông (c_pad)
-      // Nên ảnh sẽ hiển thị trọn vẹn, đẹp mắt ở giữa ô.
+      // Chèn công thức IMAGE vào cột B
       if (items[i].image) {
         worksheet[cellRef] = {
-          t: 'f', 
-          f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 1)`, 
-          v: 'Loading Image...',
+          t: 'f', // Type: Formula
+          f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 3, 500, 500)`, // Công thức thần thánh
+          v: 'Loading Image...', // Giá trị hiển thị fallback
         };
       }
     }
     worksheet['!rows'] = rows;
 
+    // 3. Tạo Workbook & Xuất
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Kho Linh Kien");
     const date = new Date().toISOString().slice(0,10);
@@ -592,6 +576,20 @@ export default function App() {
             </form>
           </div>
         )}
+
+        {/* --- BANNER VỊ TRÍ --- */}
+        {activeZone !== 'ALL' && activeZone !== 'UNCATEGORIZED' && (() => {
+          const currentZone = zones.find(z => z.id === activeZone);
+          if (currentZone && currentZone.location) {
+            return (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-4 rounded-xl mb-6 flex items-center gap-4 shadow-sm animate-in fade-in slide-in-from-top-2">
+                <div className="bg-white p-3 rounded-full shadow-sm text-blue-600"><Navigation size={24} /></div>
+                <div><p className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-0.5">Vị trí lưu trữ</p><p className="text-lg font-bold text-slate-700 flex items-center gap-2">{currentZone.location}</p></div>
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         <div className="relative mb-8"><input type="text" placeholder={`Tìm kiếm trong ${activeZone === 'ALL' ? 'tất cả kho' : 'vùng này'}...`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" /><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-6 h-6" /></div>
 
