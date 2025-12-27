@@ -26,7 +26,7 @@ import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css'; 
 import getCroppedImg from './cropUtils'; 
 
-// --- THƯ VIỆN EXCEL NHẸ (SHEETJS) ---
+// --- THƯ VIỆN EXCEL (SHEETJS) ---
 import * as XLSX from 'xlsx';
 
 // --- CẤU HÌNH FIREBASE ---
@@ -154,44 +154,62 @@ export default function App() {
     setCurrentPage(1);
   }, [searchTerm, activeZone]);
 
-  // --- LOGIC XUẤT EXCEL (ĐÃ BỎ MÔ TẢ) ---
+  // --- LOGIC XUẤT EXCEL (DÙNG HÀM IMAGE) ---
   const handleExportExcel = () => {
     if (items.length === 0) {
       alert("Kho đang trống!"); return;
     }
 
-    // 1. Chuẩn bị dữ liệu
+    // 1. Chuẩn bị dữ liệu (Khớp với thứ tự cột bạn muốn)
     const dataToExport = items.map(item => {
       const zone = zones.find(z => z.id === item.zoneId);
       return {
         'Tên Linh Kiện': item.name,
+        'Hình Ảnh': '', // Cột B: Để trống để lát chèn công thức
         'Số Lượng': item.quantity,
         'Thùng Chứa': zone ? zone.name : 'Chưa phân vùng',
-        'Vị Trí/Phòng': zone ? zone.location || 'Chưa cập nhật' : '---',
-        // ĐÃ XÓA TRƯỜNG MÔ TẢ TẠI ĐÂY
-        'Link Ảnh': item.image
+        'Vị Trí': zone ? zone.location || 'Chưa cập nhật' : '---',
+        'Link Ảnh Gốc': item.image // Cột F: Link gốc
       };
     });
 
     // 2. Tạo Worksheet
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
 
-    // Chỉnh độ rộng cột
-    const wscols = [
-      {wch: 30}, // Tên
-      {wch: 10}, // SL
-      {wch: 20}, // Thùng
-      {wch: 25}, // Vị trí
-      // ĐÃ XÓA ĐỘ RỘNG CỘT MÔ TẢ
-      {wch: 60}, // Link Ảnh
+    // --- CẤU HÌNH CỘT ---
+    worksheet['!cols'] = [
+      { wch: 30 }, // A: Tên
+      { wch: 15 }, // B: Hình Ảnh (Preview)
+      { wch: 10 }, // C: SL
+      { wch: 20 }, // D: Thùng
+      { wch: 25 }, // E: Vị trí
+      { wch: 50 }, // F: Link Gốc
     ];
-    worksheet['!cols'] = wscols;
 
-    // 3. Tạo Workbook
+    // --- CẤU HÌNH DÒNG (Quan trọng: Phải cao lên để hiện ảnh) ---
+    const rows = [{ hpt: 20 }]; // Header height
+    // Duyệt qua từng dòng dữ liệu để set chiều cao và chèn công thức
+    for (let i = 0; i < items.length; i++) {
+      rows.push({ hpt: 80 }); // Data row height (80 points ~ 106 pixels)
+      
+      const rowIndex = i + 2; // Excel bắt đầu từ dòng 2
+      const cellRef = `B${rowIndex}`; // Ô chứa ảnh
+      const linkRef = `F${rowIndex}`; // Ô chứa link (Cột F)
+
+      // Chèn công thức IMAGE vào cột B
+      if (items[i].image) {
+        worksheet[cellRef] = {
+          t: 'f', // Type: Formula
+          f: `IMAGE(TRIM(${linkRef}), "", 3, 500, 500)`, // Công thức thần thánh
+          v: 'Loading Image...', // Giá trị hiển thị fallback
+        };
+      }
+    }
+    worksheet['!rows'] = rows;
+
+    // 3. Tạo Workbook & Xuất
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Kho Linh Kien");
-
-    // 4. Xuất file
     const date = new Date().toISOString().slice(0,10);
     XLSX.writeFile(workbook, `Kho_Linh_Kien_${date}.xlsx`);
   };
@@ -536,16 +554,7 @@ export default function App() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
         {error && <div className="mb-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded flex items-center gap-2"><AlertCircle size={20} /><p>{error}</p></div>}
-        
-        {/* --- LOADING MODAL --- */}
-        {(loading || isUploading) && (
-          <div className="fixed inset-0 bg-black/30 z-50 flex justify-center items-center backdrop-blur-sm">
-            <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center">
-              <Loader2 className="animate-spin text-blue-600 w-12 h-12 mb-3" />
-              <p className="font-bold text-lg text-slate-700">Đang xử lý...</p>
-            </div>
-          </div>
-        )}
+        {(loading || isUploading) && (<div className="fixed inset-0 bg-black/30 z-50 flex justify-center items-center backdrop-blur-sm"><div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center"><Loader2 className="animate-spin text-blue-600 w-12 h-12 mb-3" /><p className="font-bold text-lg text-slate-700">{isUploading ? "Đang xử lý ảnh..." : "Đang tải..."}</p></div></div>)}
 
         {isCropping && (
           <div className="fixed inset-0 z-[60] bg-black/80 flex justify-center items-center p-4">
