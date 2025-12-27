@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Map, Building 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Building, Navigation 
 } from 'lucide-react';
 
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -66,9 +66,9 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   
-  // Zone Form State (MỚI)
+  // Zone Form State
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
-  const [editingZone, setEditingZone] = useState(null); // null = tạo mới, object = sửa
+  const [editingZone, setEditingZone] = useState(null);
   const [zoneFormName, setZoneFormName] = useState('');
   const [zoneFormLocation, setZoneFormLocation] = useState('');
 
@@ -138,9 +138,7 @@ export default function App() {
     setCurrentPage(1);
   }, [searchTerm, activeZone]);
 
-  // --- LOGIC VÙNG (ZONES - ĐÃ NÂNG CẤP) ---
-  
-  // Mở modal tạo mới
+  // --- LOGIC VÙNG (ZONES) ---
   const openAddZoneModal = () => {
     setEditingZone(null);
     setZoneFormName('');
@@ -148,29 +146,24 @@ export default function App() {
     setIsZoneModalOpen(true);
   };
 
-  // Mở modal sửa
   const openEditZoneModal = (zone, e) => {
     e.stopPropagation();
     setEditingZone(zone);
     setZoneFormName(zone.name);
-    setZoneFormLocation(zone.location || ''); // Load vị trí cũ
+    setZoneFormLocation(zone.location || '');
     setIsZoneModalOpen(true);
   };
 
-  // Lưu vùng (Tạo mới hoặc Cập nhật)
   const handleSaveZone = async (e) => {
     e.preventDefault();
     if (!zoneFormName.trim()) return;
-
     try {
       if (editingZone) {
-        // Cập nhật
         await updateDoc(doc(db, ZONES_COLLECTION, editingZone.id), {
           name: zoneFormName.trim(),
           location: zoneFormLocation.trim()
         });
       } else {
-        // Tạo mới
         await addDoc(collection(db, ZONES_COLLECTION), {
           name: zoneFormName.trim(),
           location: zoneFormLocation.trim(),
@@ -349,39 +342,11 @@ export default function App() {
       {isZoneModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex justify-center items-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-in zoom-in-95">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <MapPin className="text-blue-600"/>
-              {editingZone ? 'Chỉnh sửa khu vực' : 'Tạo khu vực mới'}
-            </h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><MapPin className="text-blue-600"/>{editingZone ? 'Chỉnh sửa khu vực' : 'Tạo khu vực mới'}</h2>
             <form onSubmit={handleSaveZone} className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-500 mb-1">Tên khu vực (Ví dụ: Tủ A)</label>
-                <input 
-                  type="text" 
-                  value={zoneFormName} 
-                  onChange={(e) => setZoneFormName(e.target.value)} 
-                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 focus:border-blue-500 outline-none font-bold"
-                  placeholder="Nhập tên..."
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-500 mb-1">Vị trí chi tiết (Ví dụ: Phòng 101, Tầng 2)</label>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    value={zoneFormLocation} 
-                    onChange={(e) => setZoneFormLocation(e.target.value)} 
-                    className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 pl-10 focus:border-blue-500 outline-none"
-                    placeholder="Mô tả vị trí..."
-                  />
-                  <Building size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                </div>
-              </div>
-              <div className="flex gap-3 mt-6">
-                <button type="button" onClick={() => setIsZoneModalOpen(false)} className="flex-1 py-3 rounded-xl bg-slate-100 font-bold text-slate-600 hover:bg-slate-200">Hủy</button>
-                <button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 font-bold text-white hover:bg-blue-700 shadow-lg">Lưu lại</button>
-              </div>
+              <div><label className="block text-sm font-bold text-slate-500 mb-1">Tên khu vực (Ví dụ: Tủ A)</label><input type="text" value={zoneFormName} onChange={(e) => setZoneFormName(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 focus:border-blue-500 outline-none font-bold" placeholder="Nhập tên..." required /></div>
+              <div><label className="block text-sm font-bold text-slate-500 mb-1">Vị trí chi tiết (Ví dụ: Phòng 101, Tầng 2)</label><div className="relative"><input type="text" value={zoneFormLocation} onChange={(e) => setZoneFormLocation(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 pl-10 focus:border-blue-500 outline-none" placeholder="Mô tả vị trí..." /><Building size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/></div></div>
+              <div className="flex gap-3 mt-6"><button type="button" onClick={() => setIsZoneModalOpen(false)} className="flex-1 py-3 rounded-xl bg-slate-100 font-bold text-slate-600 hover:bg-slate-200">Hủy</button><button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 font-bold text-white hover:bg-blue-700 shadow-lg">Lưu lại</button></div>
             </form>
           </div>
         </div>
@@ -428,7 +393,7 @@ export default function App() {
                 </div>
                 <p className="text-sm text-slate-400 font-mono mb-4">ID: {selectedItem.id}</p>
                 <div className="mb-6"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label><div className="relative"><select value={selectedItem.zoneId || 'UNCATEGORIZED'} onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)} className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition cursor-pointer"><option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>{zones.map(zone => (<option key={zone.id} value={zone.id}>📍 {zone.name} ({zone.location || 'N/A'})</option>))}</select><div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500"><MapPin size={18} /></div></div></div>
-                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-20 text-center font-mono font-bold text-3xl bg-transparent border-b-2 border-blue-500 outline-none" /><button onClick={() => setEditQtyValue(prev => prev + 1)} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-green-50 text-green-500"><Plus size={14}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="ml-2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Check size={16}/></button><button onClick={() => setEditingId(null)} className="bg-slate-200 p-2 rounded hover:bg-slate-300"><X size={16}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span><button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button></>)}</div></div>
+                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-20 text-center font-mono font-bold text-3xl bg-transparent border-b-2 border-blue-500 outline-none" /><button onClick={() => setEditQtyValue(prev => prev + 1)} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-green-50 text-green-500"><Plus size={14}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="ml-2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Check size={16}/></button><button onClick={() => setEditingId(null)} className="bg-slate-200 p-2 rounded hover:bg-slate-300"><X size={16}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span><button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button></>)}</div></div>
                 <div className="flex-1"><div className="flex items-center justify-between mb-3"><h2 className="text-xl font-bold flex items-center gap-2 text-slate-700"><AlignLeft size={24}/> Mô tả chi tiết</h2></div>{isEditingDetail ? (<div className="animate-in fade-in"><textarea className="w-full h-64 p-4 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg leading-relaxed text-slate-700" value={editDescValue} onChange={(e) => setEditDescValue(e.target.value)} placeholder="Nhập thông số kỹ thuật..."></textarea></div>) : (<div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">{selectedItem.description ? (<p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">{selectedItem.description}</p>) : (<p className="text-slate-400 italic text-center py-10">Chưa có mô tả nào cho sản phẩm này.</p>)}</div>)}</div>
               </div>
             </div>
@@ -459,11 +424,7 @@ export default function App() {
                 <div className="flex items-center gap-1 font-bold whitespace-nowrap">
                   <MapPin size={14}/> {zone.name}
                 </div>
-                {zone.location && (
-                  <div className="text-[10px] opacity-80 whitespace-nowrap max-w-[100px] overflow-hidden text-ellipsis flex items-center gap-1">
-                    <Building size={8}/> {zone.location}
-                  </div>
-                )}
+                {/* --- CHỈ HIỂN THỊ TÊN VÙNG, KHÔNG HIỆN VỊ TRÍ TRÊN TAB ĐỂ GỌN --- */}
               </button>
               
               <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 opacity-50 group-hover:opacity-100 transition">
@@ -500,6 +461,27 @@ export default function App() {
             </form>
           </div>
         )}
+
+        {/* --- BANNER VỊ TRÍ ĐẸP MẮT (MỚI) --- */}
+        {activeZone !== 'ALL' && activeZone !== 'UNCATEGORIZED' && (() => {
+          const currentZone = zones.find(z => z.id === activeZone);
+          if (currentZone && currentZone.location) {
+            return (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-4 rounded-xl mb-6 flex items-center gap-4 shadow-sm animate-in fade-in slide-in-from-top-2">
+                <div className="bg-white p-3 rounded-full shadow-sm text-blue-600">
+                  <Navigation size={24} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-0.5">Vị trí lưu trữ</p>
+                  <p className="text-lg font-bold text-slate-700 flex items-center gap-2">
+                    {currentZone.location}
+                  </p>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         <div className="relative mb-8"><input type="text" placeholder={`Tìm kiếm trong ${activeZone === 'ALL' ? 'tất cả kho' : 'vùng này'}...`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" /><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-6 h-6" /></div>
 
