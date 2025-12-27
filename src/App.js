@@ -313,29 +313,45 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10" onPaste={handlePaste}>
       
       {/* --- MODAL ĐĂNG NHẬP (CÓ TÊN ĐĂNG NHẬP) --- */}
-      {isLoginModalOpen && (
-        <div className="fixed inset-0 z-[80] bg-black/50 flex justify-center items-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm animate-in zoom-in-95 relative">
-            <button onClick={() => setIsLoginModalOpen(false)} className="absolute top-2 right-2 text-slate-400 hover:text-slate-600"><X size={20}/></button>
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3"><Lock size={32}/></div>
-              <h2 className="text-xl font-bold text-slate-800">Đăng nhập Quản trị</h2>
+     {isLoginModalOpen && (
+        <div className="fixed inset-0 z-[80] bg-black/60 flex justify-center items-center p-4 backdrop-blur-md">
+          <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm animate-in zoom-in-95 relative border border-slate-100">
+            <button onClick={() => setIsLoginModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 p-2 rounded-full transition"><X size={20}/></button>
+            
+            {/* --- PHẦN LOGO ĐƯỢC LÀM MỚI TẠI ĐÂY --- */}
+            <div className="text-center mb-8">
+              {/* Sử dụng Gradient và Shadow để tạo hình khối nổi bật */}
+              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-700 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30 rotate-3 hover:rotate-0 transition-transform duration-300">
+                {/* Dùng icon SHIELD (Khiên) thay vì Lock */}
+                <Shield size={40} strokeWidth={2} className="drop-shadow-sm" />
+              </div>
+              <h2 className="text-2xl font-extrabold text-slate-800">Khu Vực Quản Trị</h2>
+              <p className="text-slate-500 text-sm mt-2">Vui lòng xác thực danh tính để tiếp tục</p>
             </div>
-            <form onSubmit={handleLogin} className="space-y-4">
+            {/* --------------------------------------- */}
+
+            <form onSubmit={handleLogin} className="space-y-5">
               <div>
-                <label className="block text-sm font-bold text-slate-500 mb-1">Tên đăng nhập</label>
-                <input type="text" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 focus:border-blue-500 outline-none" placeholder="admin..." autoFocus />
+                <label className="block text-sm font-bold text-slate-600 mb-2 uppercase tracking-wider">Tên đăng nhập</label>
+                <div className="relative">
+                  <input type="text" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} className="w-full border-2 border-slate-200 bg-slate-50 rounded-xl px-4 py-3 pl-12 focus:border-blue-500 focus:bg-white outline-none transition font-bold text-slate-700" placeholder="Nhập username..." autoFocus />
+                  <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20}/>
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-500 mb-1">Mật khẩu</label>
-                <input type="password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 focus:border-blue-500 outline-none" placeholder="******" />
+                <label className="block text-sm font-bold text-slate-600 mb-2 uppercase tracking-wider">Mật khẩu</label>
+                <div className="relative">
+                  <input type="password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full border-2 border-slate-200 bg-slate-50 rounded-xl px-4 py-3 pl-12 focus:border-blue-500 focus:bg-white outline-none transition font-bold tracking-widest text-slate-700" placeholder="••••••" />
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20}/>
+                </div>
               </div>
-              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">Đăng Nhập</button>
+              <button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-bold py-4 rounded-xl hover:from-blue-700 hover:to-indigo-800 transition shadow-xl shadow-blue-200 transform active:scale-[0.98]">
+                Đăng Nhập Ngay
+              </button>
             </form>
           </div>
         </div>
       )}
-
       {/* --- MODAL QUẢN LÝ USER (CHỈ ADMIN THẤY) --- */}
       {isUserManagerOpen && isAdmin && (
         <div className="fixed inset-0 z-[85] bg-black/50 flex justify-center items-center p-4 backdrop-blur-sm">
