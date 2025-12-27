@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Building, Navigation, Layers, ChevronDown, Download 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Building, Navigation, Layers, ChevronDown, Download, Lock, Unlock, LogIn 
 } from 'lucide-react';
 
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -28,6 +28,9 @@ import getCroppedImg from './cropUtils';
 
 // --- THƯ VIỆN EXCEL (SHEETJS) ---
 import * as XLSX from 'xlsx';
+
+// --- CẤU HÌNH MẬT KHẨU ADMIN (BẠN ĐỔI Ở ĐÂY NHÉ) ---
+const ADMIN_PASSWORD = "123"; // <--- Đổi mật khẩu tại đây
 
 // --- CẤU HÌNH FIREBASE ---
 const firebaseConfig = {
@@ -61,6 +64,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
+  // --- STATE QUẢN LÝ QUYỀN (MỚI) ---
+  const [isAdmin, setIsAdmin] = useState(false); // Mặc định là KHÁCH (False)
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+
   // Form State
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState(1);
@@ -117,6 +125,12 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Check login status from session storage (để refresh không bị mất admin)
+  useEffect(() => {
+    const sessionAdmin = sessionStorage.getItem('isAdmin');
+    if (sessionAdmin === 'true') setIsAdmin(true);
+  }, []);
+
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -154,7 +168,27 @@ export default function App() {
     setCurrentPage(1);
   }, [searchTerm, activeZone]);
 
-  // --- LOGIC XUẤT EXCEL ---
+  // --- LOGIC ĐĂNG NHẬP ADMIN ---
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (passwordInput === ADMIN_PASSWORD) {
+      setIsAdmin(true);
+      sessionStorage.setItem('isAdmin', 'true');
+      setIsLoginModalOpen(false);
+      setPasswordInput('');
+    } else {
+      alert("Mật khẩu không đúng!");
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAdmin(false);
+    sessionStorage.removeItem('isAdmin');
+    setIsFormOpen(false);
+    setSelectedItem(null);
+  };
+
+  // --- LOGIC EXCEL ---
   const handleExportExcel = () => {
     if (items.length === 0) {
       alert("Kho đang trống!"); return;
@@ -183,7 +217,7 @@ export default function App() {
       if (items[i].image) {
         worksheet[cellRef] = {
           t: 'f', 
-          f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 1)`, // Fit cell
+          f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 1)`, 
           v: 'Loading Image...',
         };
       }
@@ -195,22 +229,15 @@ export default function App() {
     XLSX.writeFile(workbook, `Kho_Linh_Kien_${date}.xlsx`);
   };
 
-  // --- LOGIC VÙNG (ZONES) ---
+  // --- LOGIC VÙNG ---
   const openAddZoneModal = () => {
-    setEditingZone(null);
-    setZoneFormName('');
-    setZoneFormLocation('');
-    setIsZoneModalOpen(true);
-    setIsZoneDropdownOpen(false);
+    if (!isAdmin) return; // Bảo vệ
+    setEditingZone(null); setZoneFormName(''); setZoneFormLocation(''); setIsZoneModalOpen(true); setIsZoneDropdownOpen(false);
   };
 
   const openEditZoneModal = (zone, e) => {
-    e.stopPropagation();
-    setEditingZone(zone);
-    setZoneFormName(zone.name);
-    setZoneFormLocation(zone.location || '');
-    setIsZoneModalOpen(true);
-    setIsZoneDropdownOpen(false);
+    if (!isAdmin) return; // Bảo vệ
+    e.stopPropagation(); setEditingZone(zone); setZoneFormName(zone.name); setZoneFormLocation(zone.location || ''); setIsZoneModalOpen(true); setIsZoneDropdownOpen(false);
   };
 
   const handleSaveZone = async (e) => {
@@ -218,40 +245,28 @@ export default function App() {
     if (!zoneFormName.trim()) return;
     try {
       if (editingZone) {
-        await updateDoc(doc(db, ZONES_COLLECTION, editingZone.id), {
-          name: zoneFormName.trim(),
-          location: zoneFormLocation.trim()
-        });
+        await updateDoc(doc(db, ZONES_COLLECTION, editingZone.id), { name: zoneFormName.trim(), location: zoneFormLocation.trim() });
       } else {
-        await addDoc(collection(db, ZONES_COLLECTION), {
-          name: zoneFormName.trim(),
-          location: zoneFormLocation.trim(),
-          createdAt: serverTimestamp(),
-          createdBy: user.uid
-        });
+        await addDoc(collection(db, ZONES_COLLECTION), { name: zoneFormName.trim(), location: zoneFormLocation.trim(), createdAt: serverTimestamp(), createdBy: user.uid });
       }
       setIsZoneModalOpen(false);
-    } catch (err) {
-      console.error(err);
-      setError("Lỗi khi lưu khu vực.");
-    }
+    } catch (err) { setError("Lỗi khi lưu khu vực."); }
   };
 
   const handleDeleteZone = async (zoneId, e) => {
+    if (!isAdmin) return; // Bảo vệ
     e.stopPropagation();
     if (window.confirm("Xóa vùng này? Sản phẩm sẽ chuyển về 'Chưa phân vùng'.")) { 
-      try { 
-        await deleteDoc(doc(db, ZONES_COLLECTION, zoneId)); 
-        if(activeZone === zoneId) setActiveZone('ALL'); 
-      } catch (e) { setError("Lỗi khi xóa vùng."); } 
+      try { await deleteDoc(doc(db, ZONES_COLLECTION, zoneId)); if(activeZone === zoneId) setActiveZone('ALL'); } catch (e) { setError("Lỗi khi xóa vùng."); } 
     }
   };
 
   const handleChangeItemZone = async (itemId, newZoneId) => {
+    if (!isAdmin) return; // Bảo vệ
     try { const zoneValue = newZoneId === 'UNCATEGORIZED' ? null : newZoneId; await updateDoc(doc(db, ITEMS_COLLECTION, itemId), { zoneId: zoneValue }); } catch (e) { console.error(e); setError("Lỗi khi chuyển vùng sản phẩm."); }
   };
 
-  // --- LOGIC VIEW ẢNH CHI TIẾT ---
+  // --- LOGIC VIEW ẢNH ---
   const handleDetailImageLoad = (e) => {
     const img = e.target;
     const container = img.parentElement; 
@@ -277,69 +292,33 @@ export default function App() {
       const file = e.target.files[0];
       if (file.size > 10 * 1024 * 1024) { setError("Ảnh quá lớn (>10MB)."); return; }
       const reader = new FileReader();
-      reader.addEventListener('load', () => { 
-        setImageSrc(reader.result); 
-        setIsCropping(true); 
-        setCropContext(context);
-        setError(''); 
-      });
+      reader.addEventListener('load', () => { setImageSrc(reader.result); setIsCropping(true); setCropContext(context); setError(''); });
       reader.readAsDataURL(file);
     }
   };
 
   const handlePaste = (e) => {
+    if (!isAdmin) return; // Chỉ admin mới được paste
     if (!isFormOpen && !isEditingDetail) return;
     const items = e.clipboardData.items;
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.indexOf('image') !== -1) {
         const file = items[i].getAsFile();
         const reader = new FileReader();
-        reader.addEventListener('load', () => { 
-          setImageSrc(reader.result); 
-          setIsCropping(true); 
-          setCropContext(isEditingDetail ? 'EDIT' : 'ADD');
-          setError(''); 
-        });
+        reader.addEventListener('load', () => { setImageSrc(reader.result); setIsCropping(true); setCropContext(isEditingDetail ? 'EDIT' : 'ADD'); setError(''); });
         reader.readAsDataURL(file);
         e.preventDefault(); break;
       }
     }
   };
 
-  const onImageLoad = (e) => {
-    const { width, height } = e.currentTarget;
-    imgRef.current = e.currentTarget;
-    const initialCrop = centerAspectCrop(width, height);
-    setCrop(initialCrop);
-    setCompletedCrop(initialCrop); 
-  };
-
-  const showCroppedImage = async () => {
-    if (!completedCrop || !imgRef.current || completedCrop.width === 0 || completedCrop.height === 0) {
-      if (cropContext === 'ADD') setNewItemImage(imageSrc);
-      else setTempDetailImage(imageSrc);
-      setIsCropping(false); setImageSrc(null); return;
-    }
-    try { 
-      const base64 = await getCroppedImg(imgRef.current, completedCrop, 'newFile.jpeg'); 
-      if (cropContext === 'ADD') setNewItemImage(base64);
-      else setTempDetailImage(base64);
-      setIsCropping(false); setImageSrc(null); 
-    } catch (e) { 
-      if (cropContext === 'ADD') setNewItemImage(imageSrc);
-      else setTempDetailImage(imageSrc);
-      setIsCropping(false); setImageSrc(null);
-    }
-  };
-
-  const uploadToCloudinary = async (base64) => {
-    const formData = new FormData(); formData.append("file", base64); formData.append("upload_preset", UPLOAD_PRESET);
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: "POST", body: formData });
-    if (!res.ok) throw new Error("Lỗi upload"); const data = await res.json(); return data.secure_url;
-  };
+  const onImageLoad = (e) => { const { width, height } = e.currentTarget; imgRef.current = e.currentTarget; const initialCrop = centerAspectCrop(width, height); setCrop(initialCrop); setCompletedCrop(initialCrop); };
+  const showCroppedImage = async () => { if (!completedCrop || !imgRef.current || completedCrop.width === 0 || completedCrop.height === 0) { if (cropContext === 'ADD') setNewItemImage(imageSrc); else setTempDetailImage(imageSrc); setIsCropping(false); setImageSrc(null); return; } try { const base64 = await getCroppedImg(imgRef.current, completedCrop, 'newFile.jpeg'); if (cropContext === 'ADD') setNewItemImage(base64); else setTempDetailImage(base64); setIsCropping(false); setImageSrc(null); } catch (e) { if (cropContext === 'ADD') setNewItemImage(imageSrc); else setTempDetailImage(imageSrc); setIsCropping(false); setImageSrc(null); } };
+  const uploadToCloudinary = async (base64) => { const formData = new FormData(); formData.append("file", base64); formData.append("upload_preset", UPLOAD_PRESET); const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: "POST", body: formData }); if (!res.ok) throw new Error("Lỗi upload"); const data = await res.json(); return data.secure_url; };
 
   // --- CRUD ITEM ---
   const handleAddItem = async (e) => {
+    if (!isAdmin) return;
     e.preventDefault();
     if (!newItemName.trim() || !user) return;
     const normalizedNewName = newItemName.trim().toLowerCase();
@@ -357,13 +336,14 @@ export default function App() {
   };
 
   const handleDeleteItem = async (id) => { 
-    if (window.confirm("Xóa linh kiện này?")) { 
-      try { await deleteDoc(doc(db, ITEMS_COLLECTION, id)); setSelectedItem(null); } 
-      catch (err) { setError("Lỗi xóa."); } 
-    } 
+    if (!isAdmin) return;
+    if (window.confirm("Xóa linh kiện này?")) { try { await deleteDoc(doc(db, ITEMS_COLLECTION, id)); setSelectedItem(null); } catch (err) { setError("Lỗi xóa."); } } 
   };
   
-  const startEditingQty = (item) => { setEditingId(item.id); setEditQtyValue(item.quantity); };
+  const startEditingQty = (item) => { 
+    if (!isAdmin) return;
+    setEditingId(item.id); setEditQtyValue(item.quantity); 
+  };
   const handleEditQtyChange = (val) => { const v = parseInt(val); if (!isNaN(v) && v >= 0) setEditQtyValue(v); else if (val === "") setEditQtyValue(""); };
   const saveQuantity = async (id) => { if (editQtyValue === "" || editQtyValue < 0) { alert("Số lượng sai!"); return; } try { await updateDoc(doc(db, ITEMS_COLLECTION, id), { quantity: parseInt(editQtyValue) }); setEditingId(null); } catch (err) {} };
   
@@ -372,6 +352,7 @@ export default function App() {
   };
 
   const handleSaveDetailChanges = async () => {
+    if (!isAdmin) return;
     if (!selectedItem || !user) return;
     if (!editNameValue.trim()) { alert("Tên không được để trống"); return; }
     setIsUploading(true);
@@ -384,35 +365,43 @@ export default function App() {
     } catch (e) { console.error(e); setError("Lỗi khi lưu thông tin."); } finally { setIsUploading(false); }
   };
 
-  // --- LOGIC PHÂN TRANG ---
-  const filteredItems = items.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-    let matchesZone = true;
-    if (activeZone === 'ALL') matchesZone = true;
-    else if (activeZone === 'UNCATEGORIZED') matchesZone = !item.zoneId || item.zoneId === null;
-    else matchesZone = item.zoneId === activeZone;
-    return matchesSearch && matchesZone;
-  });
-
-  const indexOfLastItem = currentPage * ITEMS_PER_PAGE;
-  const indexOfFirstItem = indexOfLastItem - ITEMS_PER_PAGE;
-  const currentItems = filteredItems.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
-
-  const paginate = (pageNumber) => {
-    setCurrentPage(pageNumber);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const activeZoneName = activeZone === 'ALL' 
-    ? 'Tất cả thùng chứa' 
-    : (zones.find(z => z.id === activeZone)?.name || 'Không xác định');
+  const filteredItems = items.filter(item => { const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()); let matchesZone = true; if (activeZone === 'ALL') matchesZone = true; else if (activeZone === 'UNCATEGORIZED') matchesZone = !item.zoneId || item.zoneId === null; else matchesZone = item.zoneId === activeZone; return matchesSearch && matchesZone; });
+  const indexOfLastItem = currentPage * ITEMS_PER_PAGE; const indexOfFirstItem = indexOfLastItem - ITEMS_PER_PAGE; const currentItems = filteredItems.slice(indexOfFirstItem, indexOfLastItem); const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
+  const paginate = (pageNumber) => { setCurrentPage(pageNumber); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const activeZoneName = activeZone === 'ALL' ? 'Tất cả thùng chứa' : (zones.find(z => z.id === activeZone)?.name || 'Không xác định');
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10" onPaste={handlePaste}>
       
-      {/* --- MODAL TẠO/SỬA VÙNG --- */}
-      {isZoneModalOpen && (
+      {/* --- MODAL ĐĂNG NHẬP ADMIN --- */}
+      {isLoginModalOpen && (
+        <div className="fixed inset-0 z-[80] bg-black/50 flex justify-center items-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm animate-in zoom-in-95 relative">
+            <button onClick={() => setIsLoginModalOpen(false)} className="absolute top-2 right-2 text-slate-400 hover:text-slate-600"><X size={20}/></button>
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Lock size={32}/>
+              </div>
+              <h2 className="text-xl font-bold text-slate-800">Đăng nhập Admin</h2>
+              <p className="text-sm text-slate-500">Nhập mật khẩu để quản lý kho</p>
+            </div>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <input 
+                type="password" 
+                value={passwordInput} 
+                onChange={(e) => setPasswordInput(e.target.value)} 
+                className="w-full text-center text-2xl font-bold tracking-widest border-2 border-slate-200 rounded-xl py-3 focus:border-blue-500 outline-none"
+                placeholder="******" 
+                autoFocus
+              />
+              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">Mở Khóa</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL TẠO/SỬA VÙNG (Chỉ Admin) --- */}
+      {isZoneModalOpen && isAdmin && (
         <div className="fixed inset-0 z-50 bg-black/50 flex justify-center items-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-in zoom-in-95">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><MapPin className="text-blue-600"/>{editingZone ? 'Chỉnh sửa khu vực' : 'Tạo khu vực mới'}</h2>
@@ -435,50 +424,42 @@ export default function App() {
               </button>
               
               <div className="flex gap-3">
-                {!isEditingDetail ? (
-                  <>
-                    <button onClick={() => setIsEditingDetail(true)} className="bg-blue-100 text-blue-600 px-4 py-2 rounded-lg font-bold flex gap-2 items-center hover:bg-blue-200 transition">
-                      <Edit3 size={20}/> Sửa thông tin
-                    </button>
-                    <button onClick={() => handleDeleteItem(selectedItem.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg font-bold flex gap-1 items-center transition"><Trash2 size={20}/></button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={handleSaveDetailChanges} disabled={isUploading} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex gap-2 items-center hover:bg-blue-700 transition shadow-lg disabled:opacity-50"><Save size={20}/> {isUploading ? 'Đang lưu...' : 'Lưu lại'}</button>
-                    <button onClick={() => { setIsEditingDetail(false); setTempDetailImage(null); setEditNameValue(selectedItem.name); setEditDescValue(selectedItem.description || ""); }} disabled={isUploading} className="bg-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold hover:bg-slate-300 transition">Hủy</button>
-                  </>
+                {/* CHỈ HIỆN NÚT SỬA/XÓA KHI LÀ ADMIN */}
+                {isAdmin && (
+                  !isEditingDetail ? (
+                    <>
+                      <button onClick={() => setIsEditingDetail(true)} className="bg-blue-100 text-blue-600 px-4 py-2 rounded-lg font-bold flex gap-2 items-center hover:bg-blue-200 transition">
+                        <Edit3 size={20}/> Sửa thông tin
+                      </button>
+                      <button onClick={() => handleDeleteItem(selectedItem.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg font-bold flex gap-1 items-center transition"><Trash2 size={20}/></button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={handleSaveDetailChanges} disabled={isUploading} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex gap-2 items-center hover:bg-blue-700 transition shadow-lg disabled:opacity-50"><Save size={20}/> {isUploading ? 'Đang lưu...' : 'Lưu lại'}</button>
+                      <button onClick={() => { setIsEditingDetail(false); setTempDetailImage(null); setEditNameValue(selectedItem.name); setEditDescValue(selectedItem.description || ""); }} disabled={isUploading} className="bg-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold hover:bg-slate-300 transition">Hủy</button>
+                    </>
+                  )
                 )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* --- ẢNH ĐÃ SỬA: OBJECT-CONTAIN --- */}
               <div className="relative group">
-                <div className="bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative flex justify-center items-center">
-                  <img 
-                    src={tempDetailImage || selectedItem.image} 
-                    alt="Detail" 
-                    className={`max-w-full max-h-full object-contain ${isEditingDetail ? 'opacity-50 blur-sm' : ''}`} 
-                  />
-                  {isEditingDetail && (
-                    <label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer bg-black/10 hover:bg-black/20 transition z-20">
-                      <div className="bg-white p-4 rounded-full shadow-2xl mb-2"><Camera size={32} className="text-blue-600"/></div>
-                      <span className="font-bold text-slate-700 text-lg shadow-sm">Thay đổi ảnh</span>
-                      <input type="file" accept="image/*" onChange={(e) => handleFileSelect(e, 'EDIT')} className="hidden" />
-                    </label>
-                  )}
+                <div className={`bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative flex justify-center items-center ${!isEditingDetail ? 'cursor-grab active:cursor-grabbing' : ''}`} onMouseDown={!isEditingDetail ? handleViewMouseDown : undefined} onMouseMove={!isEditingDetail ? handleViewMouseMove : undefined} onMouseUp={!isEditingDetail ? handleViewMouseUp : undefined} onMouseLeave={!isEditingDetail ? handleViewMouseUp : undefined}>
+                  <img src={tempDetailImage || selectedItem.image} alt="Detail" className={`max-w-full max-h-full object-contain ${isEditingDetail ? 'opacity-50 blur-sm' : ''}`} />
+                  {isEditingDetail && isAdmin && (<label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer bg-black/10 hover:bg-black/20 transition z-20"><div className="bg-white p-4 rounded-full shadow-2xl mb-2"><Camera size={32} className="text-blue-600"/></div><span className="font-bold text-slate-700 text-lg shadow-sm">Thay đổi ảnh</span><input type="file" accept="image/*" onChange={(e) => handleFileSelect(e, 'EDIT')} className="hidden" /></label>)}
                 </div>
               </div>
               
               <div className="flex flex-col">
                 <div className="mb-4">
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Tên sản phẩm</label>
-                  {isEditingDetail ? (<input type="text" value={editNameValue} onChange={(e) => setEditNameValue(e.target.value)} className="w-full text-3xl md:text-4xl font-bold text-slate-800 border-b-2 border-blue-500 focus:outline-none bg-transparent py-2" />) : (<h1 className="text-3xl md:text-4xl font-bold text-slate-800">{selectedItem.name}</h1>)}
+                  {isEditingDetail && isAdmin ? (<input type="text" value={editNameValue} onChange={(e) => setEditNameValue(e.target.value)} className="w-full text-3xl md:text-4xl font-bold text-slate-800 border-b-2 border-blue-500 focus:outline-none bg-transparent py-2" />) : (<h1 className="text-3xl md:text-4xl font-bold text-slate-800">{selectedItem.name}</h1>)}
                 </div>
                 <p className="text-sm text-slate-400 font-mono mb-4">ID: {selectedItem.id}</p>
-                <div className="mb-6"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label><div className="relative"><select value={selectedItem.zoneId || 'UNCATEGORIZED'} onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)} className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition cursor-pointer"><option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>{zones.map(zone => (<option key={zone.id} value={zone.id}>📍 {zone.name} ({zone.location || 'N/A'})</option>))}</select><div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500"><MapPin size={18} /></div></div></div>
-                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-full h-10 text-center font-mono font-bold text-2xl bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800" /><button onClick={() => setEditQtyValue(prev => (prev === "" ? 1 : prev + 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm transition"><Plus size={18}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="w-10 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition"><Check size={18}/></button><button onClick={() => setEditingId(null)} className="w-10 h-10 flex-shrink-0 bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-300 transition"><X size={18}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span><button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button></>)}</div></div>
-                <div className="flex-1"><div className="flex items-center justify-between mb-3"><h2 className="text-xl font-bold flex items-center gap-2 text-slate-700"><AlignLeft size={24}/> Mô tả chi tiết</h2></div>{isEditingDetail ? (<div className="animate-in fade-in"><textarea className="w-full h-64 p-4 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg leading-relaxed text-slate-700" value={editDescValue} onChange={(e) => setEditDescValue(e.target.value)} placeholder="Nhập thông số kỹ thuật..."></textarea></div>) : (<div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">{selectedItem.description ? (<p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">{selectedItem.description}</p>) : (<p className="text-slate-400 italic text-center py-10">Chưa có mô tả nào cho sản phẩm này.</p>)}</div>)}</div>
+                <div className="mb-6"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label><div className="relative"><select disabled={!isAdmin} value={selectedItem.zoneId || 'UNCATEGORIZED'} onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)} className={`w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition ${isAdmin ? 'cursor-pointer' : 'cursor-default bg-slate-50'}`}><option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>{zones.map(zone => (<option key={zone.id} value={zone.id}>📍 {zone.name} ({zone.location || 'N/A'})</option>))}</select><div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500"><MapPin size={18} /></div></div></div>
+                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{isAdmin && editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-20 text-center font-mono font-bold text-3xl bg-transparent border-b-2 border-blue-500 outline-none" /><button onClick={() => setEditQtyValue(prev => prev + 1)} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-green-50 text-green-500"><Plus size={14}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="ml-2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Check size={16}/></button><button onClick={() => setEditingId(null)} className="bg-slate-200 p-2 rounded hover:bg-slate-300"><X size={16}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span>{isAdmin && <button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button>}</>)}</div></div>
+                <div className="flex-1"><div className="flex items-center justify-between mb-3"><h2 className="text-xl font-bold flex items-center gap-2 text-slate-700"><AlignLeft size={24}/> Mô tả chi tiết</h2></div>{isEditingDetail && isAdmin ? (<div className="animate-in fade-in"><textarea className="w-full h-64 p-4 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg leading-relaxed text-slate-700" value={editDescValue} onChange={(e) => setEditDescValue(e.target.value)} placeholder="Nhập thông số kỹ thuật..."></textarea></div>) : (<div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">{selectedItem.description ? (<p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">{selectedItem.description}</p>) : (<p className="text-slate-400 italic text-center py-10">Chưa có mô tả nào cho sản phẩm này.</p>)}</div>)}</div>
               </div>
             </div>
           </div>
@@ -519,14 +500,20 @@ export default function App() {
                           <div className={`p-2 rounded-full ${activeZone === zone.id ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}><MapPin size={16}/></div>
                           <div><div className={`font-bold ${activeZone === zone.id ? 'text-blue-700' : 'text-slate-700'}`}>{zone.name}</div>{zone.location && <div className="text-xs text-slate-400 flex items-center gap-1"><Building size={10}/> {zone.location}</div>}</div>
                         </button>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={(e) => openEditZoneModal(zone, e)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 size={16}/></button>
-                          <button onClick={(e) => handleDeleteZone(zone.id, e)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><X size={16}/></button>
-                        </div>
+                        {/* Chỉ hiện nút sửa/xóa vùng nếu là Admin */}
+                        {isAdmin && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={(e) => openEditZoneModal(zone, e)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 size={16}/></button>
+                            <button onClick={(e) => handleDeleteZone(zone.id, e)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><X size={16}/></button>
+                          </div>
+                        )}
                       </div>
                     )))}
                   </div>
-                  <div className="p-2 bg-slate-50 border-t border-slate-100"><button onClick={openAddZoneModal} className="w-full flex justify-center items-center gap-2 bg-white border border-slate-200 py-2.5 rounded-lg font-bold text-blue-600 hover:bg-blue-50 transition"><Plus size={18}/> Tạo khu vực mới</button></div>
+                  {/* Chỉ hiện nút tạo vùng nếu là Admin */}
+                  {isAdmin && (
+                    <div className="p-2 bg-slate-50 border-t border-slate-100"><button onClick={openAddZoneModal} className="w-full flex justify-center items-center gap-2 bg-white border border-slate-200 py-2.5 rounded-lg font-bold text-blue-600 hover:bg-blue-50 transition"><Plus size={18}/> Tạo khu vực mới</button></div>
+                  )}
                 </div>
               )}
             </div>
@@ -535,8 +522,28 @@ export default function App() {
             <button onClick={handleExportExcel} className="bg-blue-700 hover:bg-blue-800 text-white p-2.5 rounded-xl border border-blue-500 shadow-inner flex items-center justify-center" title="Xuất Excel"><Download size={20}/></button>
           </div>
 
-          {activeZone !== 'ALL' && (
-            <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-4 py-2.5 rounded-xl font-bold flex gap-2 shadow-sm hover:bg-blue-50 transition whitespace-nowrap">
+          {/* NÚT LOGIN / LOGOUT ADMIN */}
+          {isAdmin ? (
+            <button 
+              onClick={handleLogout}
+              className="bg-red-500 hover:bg-red-600 text-white p-2.5 rounded-xl border border-red-400 shadow-inner flex items-center justify-center"
+              title="Đăng xuất Admin"
+            >
+              <Unlock size={20}/>
+            </button>
+          ) : (
+            <button 
+              onClick={() => setIsLoginModalOpen(true)}
+              className="bg-slate-800 hover:bg-slate-900 text-white p-2.5 rounded-xl border border-slate-600 shadow-inner flex items-center justify-center"
+              title="Đăng nhập Admin"
+            >
+              <LogIn size={20}/>
+            </button>
+          )}
+
+          {/* Nút Thêm Mới chỉ hiện khi là Admin */}
+          {isAdmin && activeZone !== 'ALL' && (
+            <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-4 py-2.5 rounded-xl font-bold flex gap-2 shadow-sm hover:bg-blue-50 transition whitespace-nowrap ml-2">
               {isFormOpen ? <Minus size={20} /> : <Plus size={20} />} <span className="hidden sm:inline">{isFormOpen ? 'Đóng' : 'Thêm Mới'}</span>
             </button>
           )}
@@ -557,7 +564,7 @@ export default function App() {
           </div>
         )}
 
-        {isFormOpen && activeZone !== 'ALL' && (
+        {isFormOpen && activeZone !== 'ALL' && isAdmin && (
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200 animate-in slide-in-from-top-4" onPaste={handlePaste}>
             <div className="flex justify-between items-center mb-6"><h2 className="font-bold text-2xl text-slate-800">Thêm vào: {zones.find(z => z.id === activeZone)?.name}</h2><span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">Hỗ trợ dán ảnh (Ctrl+V)</span></div>
             <form onSubmit={handleAddItem} className="space-y-6">
@@ -585,10 +592,10 @@ export default function App() {
         <div className="relative mb-8"><input type="text" placeholder={`Tìm kiếm trong ${activeZone === 'ALL' ? 'tất cả kho' : 'vùng này'}...`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" /><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-6 h-6" /></div>
 
         {!loading && filteredItems.length === 0 ? (
-          <div className="text-center py-16 text-slate-400 bg-white rounded-3xl border-2 border-dashed border-slate-200"><Package className="w-16 h-16 mx-auto mb-4 opacity-30" /><p className="text-xl font-medium">{activeZone === 'ALL' ? 'Kho chưa có gì cả' : 'Khu vực này đang trống'}</p>{activeZone !== 'ALL' && (<p className="text-sm mt-2 text-blue-500 cursor-pointer hover:underline" onClick={() => setIsFormOpen(true)}>Thêm món đầu tiên ngay</p>)}</div>
+          <div className="text-center py-16 text-slate-400 bg-white rounded-3xl border-2 border-dashed border-slate-200"><Package className="w-16 h-16 mx-auto mb-4 opacity-30" /><p className="text-xl font-medium">{activeZone === 'ALL' ? 'Kho chưa có gì cả' : 'Khu vực này đang trống'}</p>{activeZone !== 'ALL' && isAdmin && (<p className="text-sm mt-2 text-blue-500 cursor-pointer hover:underline" onClick={() => setIsFormOpen(true)}>Thêm món đầu tiên ngay</p>)}</div>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{currentItems.map((item) => (<div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300"><div onClick={() => openDetail(item)} className="h-80 w-full bg-white relative group border-b border-slate-50 p-4 cursor-pointer"><img src={item.image} alt={item.name} className="w-full h-full object-cover rounded-lg transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} /></div><div className="p-5 flex-1 flex flex-col justify-between"><div className="mb-4"><h3 onClick={() => openDetail(item)} className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1 cursor-pointer hover:text-blue-600 transition">{item.name}</h3>{activeZone === 'ALL' && (<span className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded-full">{zones.find(z => z.id === item.zoneId)?.name || 'Chưa phân vùng'}</span>)}</div><div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 min-h-[60px]">{editingId === item.id ? (<div className="flex items-center justify-between w-full animate-in fade-in duration-200 gap-2"><button onClick={() => setEditQtyValue(prev => (prev === "" || prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-red-200 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-500 shadow-sm transition"><Minus size={18}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-full h-10 text-center font-mono font-bold text-2xl bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800" /><button onClick={() => setEditQtyValue(prev => (prev === "" ? 1 : prev + 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm transition"><Plus size={18}/></button><button onClick={() => saveQuantity(item.id)} className="w-10 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition"><Check size={18}/></button><button onClick={() => setEditingId(null)} className="w-10 h-10 flex-shrink-0 bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-300 transition"><X size={18}/></button></div>) : (<div className="flex items-center justify-between w-full"><div className="flex flex-col"><span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Số lượng</span><span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span></div><button onClick={() => startEditingQty(item)} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center gap-2"><Edit3 size={16}/> Sửa</button></div>)}</div></div></div>))}</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{currentItems.map((item) => (<div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300"><div onClick={() => openDetail(item)} className="h-80 w-full bg-white relative group border-b border-slate-50 p-4 cursor-pointer"><img src={item.image} alt={item.name} className="w-full h-full object-cover rounded-lg transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} /></div><div className="p-5 flex-1 flex flex-col justify-between"><div className="mb-4"><h3 onClick={() => openDetail(item)} className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1 cursor-pointer hover:text-blue-600 transition">{item.name}</h3>{activeZone === 'ALL' && (<span className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded-full">{zones.find(z => z.id === item.zoneId)?.name || 'Chưa phân vùng'}</span>)}</div><div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 min-h-[60px]">{isAdmin && editingId === item.id ? (<div className="flex items-center justify-between w-full animate-in fade-in duration-200 gap-2"><button onClick={() => setEditQtyValue(prev => (prev === "" || prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-red-200 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-500 shadow-sm transition"><Minus size={18}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-full h-10 text-center font-mono font-bold text-2xl bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800" /><button onClick={() => setEditQtyValue(prev => (prev === "" ? 1 : prev + 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm transition"><Plus size={18}/></button><button onClick={() => saveQuantity(item.id)} className="w-10 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition"><Check size={18}/></button><button onClick={() => setEditingId(null)} className="w-10 h-10 flex-shrink-0 bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-300 transition"><X size={18}/></button></div>) : (<div className="flex items-center justify-between w-full"><div className="flex flex-col"><span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Số lượng</span><span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span></div>{isAdmin && <button onClick={() => startEditingQty(item)} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center gap-2"><Edit3 size={16}/> Sửa</button>}</div>)}</div></div></div>))}</div>
             {totalPages > 1 && (
               <div className="flex justify-center mt-12 gap-2">
                 <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className="p-2 rounded-lg bg-white border hover:bg-slate-50 disabled:opacity-50"><ChevronLeft size={20}/></button>
