@@ -16,21 +16,26 @@ import {
   serverTimestamp, 
   query, 
   orderBy,
+  where,
+  getDocs
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Building, Navigation, Layers, ChevronDown, Download, Lock, Unlock, LogIn 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Building, Navigation, Layers, ChevronDown, Download, Lock, Unlock, LogIn, Users, UserPlus, UserX, Shield 
 } from 'lucide-react';
 
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css'; 
 import getCroppedImg from './cropUtils'; 
-
-// --- THƯ VIỆN EXCEL (SHEETJS) ---
 import * as XLSX from 'xlsx';
 
-// --- CẤU HÌNH MẬT KHẨU ADMIN (BẠN ĐỔI Ở ĐÂY NHÉ) ---
-const ADMIN_PASSWORD = "123"; // <--- Đổi mật khẩu tại đây
+// --- CẤU HÌNH TÀI KHOẢN GỐC (MASTER ADMIN) ---
+// Đây là tài khoản cứu hộ, luôn đăng nhập được
+const MASTER_USER = {
+  username: "admin",
+  password: "123", 
+  name: "Quản trị viên (Gốc)"
+};
 
 // --- CẤU HÌNH FIREBASE ---
 const firebaseConfig = {
@@ -48,11 +53,10 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const ITEMS_COLLECTION = 'inventory_items';
 const ZONES_COLLECTION = 'inventory_zones';
+const USERS_COLLECTION = 'authorized_users'; // Collection lưu tài khoản phụ
 
-// --- CẤU HÌNH CLOUDINARY ---
 const CLOUD_NAME = "dphexeute"; 
 const UPLOAD_PRESET = "kho_linh_kien"; 
-
 const ITEMS_PER_PAGE = 12;
 
 export default function App() {
@@ -64,10 +68,21 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
-  // --- STATE QUẢN LÝ QUYỀN (MỚI) ---
-  const [isAdmin, setIsAdmin] = useState(false); // Mặc định là KHÁCH (False)
+  // --- STATE QUẢN LÝ QUYỀN & USER ---
+  const [isAdmin, setIsAdmin] = useState(false); 
+  const [currentAdminInfo, setCurrentAdminInfo] = useState(null); // Lưu thông tin người đang đăng nhập
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  
+  // Login Inputs
+  const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+
+  // User Management State (Quản lý nhân sự)
+  const [isUserManagerOpen, setIsUserManagerOpen] = useState(false);
+  const [adminUsers, setAdminUsers] = useState([]); // Danh sách tài khoản phụ
+  const [newUserUsername, setNewUserUsername] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserName, setNewUserName] = useState('');
 
   // Form State
   const [newItemName, setNewItemName] = useState('');
@@ -84,286 +99,210 @@ export default function App() {
   const [zoneFormName, setZoneFormName] = useState('');
   const [zoneFormLocation, setZoneFormLocation] = useState('');
 
-  // Pagination State
+  // Pagination & Edit State
   const [currentPage, setCurrentPage] = useState(1);
-
-  // Detail & Edit State
   const [selectedItem, setSelectedItem] = useState(null); 
   const [isEditingDetail, setIsEditingDetail] = useState(false); 
   const [editNameValue, setEditNameValue] = useState("");
   const [editDescValue, setEditDescValue] = useState(""); 
   const [tempDetailImage, setTempDetailImage] = useState(null); 
-
-  // Quantity Edit State
   const [editingId, setEditingId] = useState(null); 
   const [editQtyValue, setEditQtyValue] = useState(0);
 
-  // View State
+  // View & Crop State
   const [viewScale, setViewScale] = useState(1); 
   const [viewPosition, setViewPosition] = useState({ x: 0, y: 0 }); 
   const [isDraggingView, setIsDraggingView] = useState(false); 
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); 
-  
-  // Cropper State
   const [imageSrc, setImageSrc] = useState(null);
   const [crop, setCrop] = useState(); 
   const [completedCrop, setCompletedCrop] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
   const [cropContext, setCropContext] = useState('ADD'); 
   const imgRef = useRef(null); 
-  
   const dropdownRef = useRef(null);
 
-  // Auth
+  // Auth & Data Fetching
   useEffect(() => {
-    const initAuth = async () => {
-      try { await signInAnonymously(auth); } 
-      catch (err) { console.error(err); setError("Lỗi kết nối."); }
-    };
+    const initAuth = async () => { try { await signInAnonymously(auth); } catch (err) { console.error(err); setError("Lỗi kết nối."); } };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
-  // Check login status from session storage (để refresh không bị mất admin)
+  // Restore Admin Session
   useEffect(() => {
     const sessionAdmin = sessionStorage.getItem('isAdmin');
-    if (sessionAdmin === 'true') setIsAdmin(true);
+    const sessionInfo = sessionStorage.getItem('adminInfo');
+    if (sessionAdmin === 'true' && sessionInfo) {
+      setIsAdmin(true);
+      setCurrentAdminInfo(JSON.parse(sessionInfo));
+    }
   }, []);
 
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsZoneDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [dropdownRef]);
-
-  // --- DATA FETCHING ---
+  // Fetch Items & Zones
   useEffect(() => {
     if (!user) return;
     const qItems = query(collection(db, ITEMS_COLLECTION), orderBy('createdAt', 'desc'));
     const unsubItems = onSnapshot(qItems, (snapshot) => {
       const loadedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setItems(loadedItems);
-      setLoading(false);
-      if (selectedItem) {
-        const updatedItem = loadedItems.find(i => i.id === selectedItem.id);
-        if (updatedItem && !isEditingDetail) {
-             setSelectedItem(updatedItem);
-        }
-      }
+      setItems(loadedItems); setLoading(false);
+      if (selectedItem) { const updatedItem = loadedItems.find(i => i.id === selectedItem.id); if (updatedItem && !isEditingDetail) setSelectedItem(updatedItem); }
     });
     const qZones = query(collection(db, ZONES_COLLECTION), orderBy('createdAt', 'asc'));
-    const unsubZones = onSnapshot(qZones, (snapshot) => {
-      const loadedZones = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setZones(loadedZones);
-    });
+    const unsubZones = onSnapshot(qZones, (snapshot) => { const loadedZones = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); setZones(loadedZones); });
+    
     return () => { unsubItems(); unsubZones(); };
   }, [user, selectedItem, isEditingDetail]);
 
+  // Fetch Admin Users (Chỉ khi đã là Admin)
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, activeZone]);
+    if (!user || !isAdmin) return;
+    const qUsers = query(collection(db, USERS_COLLECTION), orderBy('createdAt', 'desc'));
+    const unsubUsers = onSnapshot(qUsers, (snapshot) => {
+      const loadedUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAdminUsers(loadedUsers);
+    });
+    return () => unsubUsers();
+  }, [user, isAdmin]);
 
-  // --- LOGIC ĐĂNG NHẬP ADMIN ---
-  const handleLogin = (e) => {
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, activeZone]);
+  
+  useEffect(() => {
+    function handleClickOutside(event) { if (dropdownRef.current && !dropdownRef.current.contains(event.target)) { setIsZoneDropdownOpen(false); } }
+    document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [dropdownRef]);
+
+  // --- LOGIC ĐĂNG NHẬP & QUẢN LÝ USER ---
+  
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (passwordInput === ADMIN_PASSWORD) {
+    setError('');
+    
+    // 1. Check Master Admin (Hardcode)
+    if (usernameInput === MASTER_USER.username && passwordInput === MASTER_USER.password) {
       setIsAdmin(true);
+      setCurrentAdminInfo(MASTER_USER);
       sessionStorage.setItem('isAdmin', 'true');
+      sessionStorage.setItem('adminInfo', JSON.stringify(MASTER_USER));
       setIsLoginModalOpen(false);
-      setPasswordInput('');
-    } else {
-      alert("Mật khẩu không đúng!");
+      setUsernameInput(''); setPasswordInput('');
+      return;
+    }
+
+    // 2. Check Database Users
+    try {
+      const q = query(collection(db, USERS_COLLECTION), where("username", "==", usernameInput));
+      const querySnapshot = await getDocs(q);
+      
+      let foundUser = null;
+      querySnapshot.forEach((doc) => {
+        const userData = doc.data();
+        if (userData.password === passwordInput) {
+          foundUser = { id: doc.id, ...userData };
+        }
+      });
+
+      if (foundUser) {
+        setIsAdmin(true);
+        setCurrentAdminInfo(foundUser);
+        sessionStorage.setItem('isAdmin', 'true');
+        sessionStorage.setItem('adminInfo', JSON.stringify(foundUser));
+        setIsLoginModalOpen(false);
+        setUsernameInput(''); setPasswordInput('');
+      } else {
+        alert("Sai tên đăng nhập hoặc mật khẩu!");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Lỗi khi kiểm tra đăng nhập.");
     }
   };
 
   const handleLogout = () => {
     setIsAdmin(false);
+    setCurrentAdminInfo(null);
     sessionStorage.removeItem('isAdmin');
+    sessionStorage.removeItem('adminInfo');
     setIsFormOpen(false);
+    setIsUserManagerOpen(false);
     setSelectedItem(null);
   };
 
-  // --- LOGIC EXCEL ---
-  const handleExportExcel = () => {
-    if (items.length === 0) {
-      alert("Kho đang trống!"); return;
+  const handleAddUser = async (e) => {
+    e.preventDefault();
+    if (!newUserUsername.trim() || !newUserPassword.trim() || !newUserName.trim()) return;
+    
+    // Check trùng username (local check)
+    if (adminUsers.some(u => u.username === newUserUsername) || newUserUsername === MASTER_USER.username) {
+      alert("Tên đăng nhập đã tồn tại!"); return;
     }
+
+    try {
+      await addDoc(collection(db, USERS_COLLECTION), {
+        username: newUserUsername.trim(),
+        password: newUserPassword.trim(),
+        name: newUserName.trim(),
+        createdAt: serverTimestamp(),
+        createdBy: currentAdminInfo.username
+      });
+      setNewUserUsername(''); setNewUserPassword(''); setNewUserName('');
+      alert("Tạo tài khoản thành công!");
+    } catch (e) {
+      console.error(e);
+      alert("Lỗi khi tạo tài khoản.");
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (window.confirm("Bạn chắc chắn muốn xóa tài khoản này? Người này sẽ không thể đăng nhập nữa.")) {
+      try { await deleteDoc(doc(db, USERS_COLLECTION, userId)); } 
+      catch (e) { alert("Lỗi khi xóa."); }
+    }
+  };
+
+  // --- LOGIC KHÁC (GIỮ NGUYÊN) ---
+  const handleExportExcel = () => {
+    if (items.length === 0) { alert("Kho đang trống!"); return; }
     const dataToExport = items.map(item => {
       const zone = zones.find(z => z.id === item.zoneId);
-      return {
-        'Tên Linh Kiện': item.name,
-        'Hình Ảnh': '', 
-        'Số Lượng': item.quantity,
-        'Thùng Chứa': zone ? zone.name : 'Chưa phân vùng',
-        'Vị Trí': zone ? zone.location || 'Chưa cập nhật' : '---',
-        'Link Ảnh Gốc': item.image 
-      };
+      return { 'Tên Linh Kiện': item.name, 'Hình Ảnh': '', 'Số Lượng': item.quantity, 'Thùng Chứa': zone ? zone.name : 'Chưa phân vùng', 'Vị Trí': zone ? zone.location || 'Chưa cập nhật' : '---', 'Link Ảnh Gốc': item.image };
     });
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    worksheet['!cols'] = [
-      { wch: 30 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 50 },
-    ];
+    worksheet['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 50 }];
     const rows = [{ hpt: 20 }]; 
     for (let i = 0; i < items.length; i++) {
       rows.push({ hpt: 80 }); 
-      const rowIndex = i + 2; 
-      const cellRef = `B${rowIndex}`; 
-      const linkRef = `F${rowIndex}`; 
-      if (items[i].image) {
-        worksheet[cellRef] = {
-          t: 'f', 
-          f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 1)`, 
-          v: 'Loading Image...',
-        };
-      }
+      const rowIndex = i + 2; const cellRef = `B${rowIndex}`; const linkRef = `F${rowIndex}`; 
+      if (items[i].image) { worksheet[cellRef] = { t: 'f', f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 1)`, v: 'Loading Image...' }; }
     }
     worksheet['!rows'] = rows;
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Kho Linh Kien");
-    const date = new Date().toISOString().slice(0,10);
-    XLSX.writeFile(workbook, `Kho_Linh_Kien_${date}.xlsx`);
+    const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Kho Linh Kien");
+    const date = new Date().toISOString().slice(0,10); XLSX.writeFile(workbook, `Kho_Linh_Kien_${date}.xlsx`);
   };
 
-  // --- LOGIC VÙNG ---
-  const openAddZoneModal = () => {
-    if (!isAdmin) return; // Bảo vệ
-    setEditingZone(null); setZoneFormName(''); setZoneFormLocation(''); setIsZoneModalOpen(true); setIsZoneDropdownOpen(false);
-  };
-
-  const openEditZoneModal = (zone, e) => {
-    if (!isAdmin) return; // Bảo vệ
-    e.stopPropagation(); setEditingZone(zone); setZoneFormName(zone.name); setZoneFormLocation(zone.location || ''); setIsZoneModalOpen(true); setIsZoneDropdownOpen(false);
-  };
-
-  const handleSaveZone = async (e) => {
-    e.preventDefault();
-    if (!zoneFormName.trim()) return;
-    try {
-      if (editingZone) {
-        await updateDoc(doc(db, ZONES_COLLECTION, editingZone.id), { name: zoneFormName.trim(), location: zoneFormLocation.trim() });
-      } else {
-        await addDoc(collection(db, ZONES_COLLECTION), { name: zoneFormName.trim(), location: zoneFormLocation.trim(), createdAt: serverTimestamp(), createdBy: user.uid });
-      }
-      setIsZoneModalOpen(false);
-    } catch (err) { setError("Lỗi khi lưu khu vực."); }
-  };
-
-  const handleDeleteZone = async (zoneId, e) => {
-    if (!isAdmin) return; // Bảo vệ
-    e.stopPropagation();
-    if (window.confirm("Xóa vùng này? Sản phẩm sẽ chuyển về 'Chưa phân vùng'.")) { 
-      try { await deleteDoc(doc(db, ZONES_COLLECTION, zoneId)); if(activeZone === zoneId) setActiveZone('ALL'); } catch (e) { setError("Lỗi khi xóa vùng."); } 
-    }
-  };
-
-  const handleChangeItemZone = async (itemId, newZoneId) => {
-    if (!isAdmin) return; // Bảo vệ
-    try { const zoneValue = newZoneId === 'UNCATEGORIZED' ? null : newZoneId; await updateDoc(doc(db, ITEMS_COLLECTION, itemId), { zoneId: zoneValue }); } catch (e) { console.error(e); setError("Lỗi khi chuyển vùng sản phẩm."); }
-  };
-
-  // --- LOGIC VIEW ẢNH ---
-  const handleDetailImageLoad = (e) => {
-    const img = e.target;
-    const container = img.parentElement; 
-    const containerW = container.offsetWidth;
-    const containerH = container.offsetHeight;
-    const imgNaturalW = img.naturalWidth;
-    const imgNaturalH = img.naturalHeight;
-    const scaleX = containerW / imgNaturalW;
-    const scaleY = containerH / imgNaturalH;
-    let optimalScale = Math.max(scaleX, scaleY);
-    if (optimalScale < 1) optimalScale = 1;
-    setViewScale(optimalScale);
-  };
+  const openAddZoneModal = () => { if (!isAdmin) return; setEditingZone(null); setZoneFormName(''); setZoneFormLocation(''); setIsZoneModalOpen(true); setIsZoneDropdownOpen(false); };
+  const openEditZoneModal = (zone, e) => { if (!isAdmin) return; e.stopPropagation(); setEditingZone(zone); setZoneFormName(zone.name); setZoneFormLocation(zone.location || ''); setIsZoneModalOpen(true); setIsZoneDropdownOpen(false); };
+  const handleSaveZone = async (e) => { e.preventDefault(); if (!zoneFormName.trim()) return; try { if (editingZone) { await updateDoc(doc(db, ZONES_COLLECTION, editingZone.id), { name: zoneFormName.trim(), location: zoneFormLocation.trim() }); } else { await addDoc(collection(db, ZONES_COLLECTION), { name: zoneFormName.trim(), location: zoneFormLocation.trim(), createdAt: serverTimestamp(), createdBy: user.uid }); } setIsZoneModalOpen(false); } catch (err) { setError("Lỗi khi lưu khu vực."); } };
+  const handleDeleteZone = async (zoneId, e) => { if (!isAdmin) return; e.stopPropagation(); if (window.confirm("Xóa vùng này? Sản phẩm sẽ chuyển về 'Chưa phân vùng'.")) { try { await deleteDoc(doc(db, ZONES_COLLECTION, zoneId)); if(activeZone === zoneId) setActiveZone('ALL'); } catch (e) { setError("Lỗi khi xóa vùng."); } } };
+  const handleChangeItemZone = async (itemId, newZoneId) => { if (!isAdmin) return; try { const zoneValue = newZoneId === 'UNCATEGORIZED' ? null : newZoneId; await updateDoc(doc(db, ITEMS_COLLECTION, itemId), { zoneId: zoneValue }); } catch (e) { console.error(e); setError("Lỗi khi chuyển vùng sản phẩm."); } };
+  const handleDetailImageLoad = (e) => { const img = e.target; const container = img.parentElement; const containerW = container.offsetWidth; const containerH = container.offsetHeight; const imgNaturalW = img.naturalWidth; const imgNaturalH = img.naturalHeight; const scaleX = containerW / imgNaturalW; const scaleY = containerH / imgNaturalH; let optimalScale = Math.max(scaleX, scaleY); if (optimalScale < 1) optimalScale = 1; setViewScale(optimalScale); };
   const handleViewMouseDown = (e) => { e.preventDefault(); setIsDraggingView(true); setDragStart({ x: e.clientX - viewPosition.x, y: e.clientY - viewPosition.y }); };
   const handleViewMouseMove = (e) => { if (!isDraggingView) return; e.preventDefault(); setViewPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }); };
   const handleViewMouseUp = () => { setIsDraggingView(false); };
-
-  // --- LOGIC UPLOAD & CROP ---
   function centerAspectCrop(mediaWidth, mediaHeight) { return centerCrop(makeAspectCrop({ unit: '%', width: 90 }, undefined, mediaWidth, mediaHeight), mediaWidth, mediaHeight) }
-
-  const handleFileSelect = (e, context = 'ADD') => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      if (file.size > 10 * 1024 * 1024) { setError("Ảnh quá lớn (>10MB)."); return; }
-      const reader = new FileReader();
-      reader.addEventListener('load', () => { setImageSrc(reader.result); setIsCropping(true); setCropContext(context); setError(''); });
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handlePaste = (e) => {
-    if (!isAdmin) return; // Chỉ admin mới được paste
-    if (!isFormOpen && !isEditingDetail) return;
-    const items = e.clipboardData.items;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) {
-        const file = items[i].getAsFile();
-        const reader = new FileReader();
-        reader.addEventListener('load', () => { setImageSrc(reader.result); setIsCropping(true); setCropContext(isEditingDetail ? 'EDIT' : 'ADD'); setError(''); });
-        reader.readAsDataURL(file);
-        e.preventDefault(); break;
-      }
-    }
-  };
-
+  const handleFileSelect = (e, context = 'ADD') => { if (e.target.files && e.target.files.length > 0) { const file = e.target.files[0]; if (file.size > 10 * 1024 * 1024) { setError("Ảnh quá lớn (>10MB)."); return; } const reader = new FileReader(); reader.addEventListener('load', () => { setImageSrc(reader.result); setIsCropping(true); setCropContext(context); setError(''); }); reader.readAsDataURL(file); } };
+  const handlePaste = (e) => { if (!isAdmin) return; if (!isFormOpen && !isEditingDetail) return; const items = e.clipboardData.items; for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf('image') !== -1) { const file = items[i].getAsFile(); const reader = new FileReader(); reader.addEventListener('load', () => { setImageSrc(reader.result); setIsCropping(true); setCropContext(isEditingDetail ? 'EDIT' : 'ADD'); setError(''); }); reader.readAsDataURL(file); e.preventDefault(); break; } } };
   const onImageLoad = (e) => { const { width, height } = e.currentTarget; imgRef.current = e.currentTarget; const initialCrop = centerAspectCrop(width, height); setCrop(initialCrop); setCompletedCrop(initialCrop); };
   const showCroppedImage = async () => { if (!completedCrop || !imgRef.current || completedCrop.width === 0 || completedCrop.height === 0) { if (cropContext === 'ADD') setNewItemImage(imageSrc); else setTempDetailImage(imageSrc); setIsCropping(false); setImageSrc(null); return; } try { const base64 = await getCroppedImg(imgRef.current, completedCrop, 'newFile.jpeg'); if (cropContext === 'ADD') setNewItemImage(base64); else setTempDetailImage(base64); setIsCropping(false); setImageSrc(null); } catch (e) { if (cropContext === 'ADD') setNewItemImage(imageSrc); else setTempDetailImage(imageSrc); setIsCropping(false); setImageSrc(null); } };
   const uploadToCloudinary = async (base64) => { const formData = new FormData(); formData.append("file", base64); formData.append("upload_preset", UPLOAD_PRESET); const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: "POST", body: formData }); if (!res.ok) throw new Error("Lỗi upload"); const data = await res.json(); return data.secure_url; };
-
-  // --- CRUD ITEM ---
-  const handleAddItem = async (e) => {
-    if (!isAdmin) return;
-    e.preventDefault();
-    if (!newItemName.trim() || !user) return;
-    const normalizedNewName = newItemName.trim().toLowerCase();
-    if (items.some(item => item.name.toLowerCase() === normalizedNewName)) { setError("Tên linh kiện đã tồn tại!"); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
-    setIsUploading(true);
-    try {
-      let finalImageUrl = 'https://via.placeholder.com/300?text=No+Image'; 
-      if (newItemImage && newItemImage.startsWith('data:image')) { finalImageUrl = await uploadToCloudinary(newItemImage); }
-      else if (newItemImage) { finalImageUrl = newItemImage; }
-      await addDoc(collection(db, ITEMS_COLLECTION), {
-        name: newItemName, quantity: parseInt(newItemQty), image: finalImageUrl, description: "", zoneId: activeZone === 'ALL' || activeZone === 'UNCATEGORIZED' ? null : activeZone, createdAt: serverTimestamp(), createdBy: user.uid
-      });
-      setNewItemName(''); setNewItemQty(1); setNewItemImage(''); setIsFormOpen(false); setError('');
-    } catch (err) { setError("Lỗi khi lưu."); } finally { setIsUploading(false); }
-  };
-
-  const handleDeleteItem = async (id) => { 
-    if (!isAdmin) return;
-    if (window.confirm("Xóa linh kiện này?")) { try { await deleteDoc(doc(db, ITEMS_COLLECTION, id)); setSelectedItem(null); } catch (err) { setError("Lỗi xóa."); } } 
-  };
-  
-  const startEditingQty = (item) => { 
-    if (!isAdmin) return;
-    setEditingId(item.id); setEditQtyValue(item.quantity); 
-  };
+  const handleAddItem = async (e) => { if (!isAdmin) return; e.preventDefault(); if (!newItemName.trim() || !user) return; const normalizedNewName = newItemName.trim().toLowerCase(); if (items.some(item => item.name.toLowerCase() === normalizedNewName)) { setError("Tên linh kiện đã tồn tại!"); window.scrollTo({ top: 0, behavior: 'smooth' }); return; } setIsUploading(true); try { let finalImageUrl = 'https://via.placeholder.com/300?text=No+Image'; if (newItemImage && newItemImage.startsWith('data:image')) { finalImageUrl = await uploadToCloudinary(newItemImage); } else if (newItemImage) { finalImageUrl = newItemImage; } await addDoc(collection(db, ITEMS_COLLECTION), { name: newItemName, quantity: parseInt(newItemQty), image: finalImageUrl, description: "", zoneId: activeZone === 'ALL' || activeZone === 'UNCATEGORIZED' ? null : activeZone, createdAt: serverTimestamp(), createdBy: user.uid }); setNewItemName(''); setNewItemQty(1); setNewItemImage(''); setIsFormOpen(false); setError(''); } catch (err) { setError("Lỗi khi lưu."); } finally { setIsUploading(false); } };
+  const handleDeleteItem = async (id) => { if (!isAdmin) return; if (window.confirm("Xóa linh kiện này?")) { try { await deleteDoc(doc(db, ITEMS_COLLECTION, id)); setSelectedItem(null); } catch (err) { setError("Lỗi xóa."); } } };
+  const startEditingQty = (item) => { if (!isAdmin) return; setEditingId(item.id); setEditQtyValue(item.quantity); };
   const handleEditQtyChange = (val) => { const v = parseInt(val); if (!isNaN(v) && v >= 0) setEditQtyValue(v); else if (val === "") setEditQtyValue(""); };
   const saveQuantity = async (id) => { if (editQtyValue === "" || editQtyValue < 0) { alert("Số lượng sai!"); return; } try { await updateDoc(doc(db, ITEMS_COLLECTION, id), { quantity: parseInt(editQtyValue) }); setEditingId(null); } catch (err) {} };
-  
-  const openDetail = (item) => { 
-    setSelectedItem(item); setEditDescValue(item.description || ""); setEditNameValue(item.name); setTempDetailImage(null); setIsEditingDetail(false); setViewPosition({x:0, y:0}); 
-  };
-
-  const handleSaveDetailChanges = async () => {
-    if (!isAdmin) return;
-    if (!selectedItem || !user) return;
-    if (!editNameValue.trim()) { alert("Tên không được để trống"); return; }
-    setIsUploading(true);
-    try {
-      let finalImageUrl = selectedItem.image;
-      if (tempDetailImage && tempDetailImage.startsWith('data:image')) { finalImageUrl = await uploadToCloudinary(tempDetailImage); }
-      await updateDoc(doc(db, ITEMS_COLLECTION, selectedItem.id), { name: editNameValue.trim(), description: editDescValue, image: finalImageUrl });
-      setSelectedItem(prev => ({ ...prev, name: editNameValue.trim(), description: editDescValue, image: finalImageUrl }));
-      setIsEditingDetail(false); setTempDetailImage(null);
-    } catch (e) { console.error(e); setError("Lỗi khi lưu thông tin."); } finally { setIsUploading(false); }
-  };
+  const openDetail = (item) => { setSelectedItem(item); setEditDescValue(item.description || ""); setEditNameValue(item.name); setTempDetailImage(null); setIsEditingDetail(false); setViewPosition({x:0, y:0}); };
+  const handleSaveDetailChanges = async () => { if (!isAdmin) return; if (!selectedItem || !user) return; if (!editNameValue.trim()) { alert("Tên không được để trống"); return; } setIsUploading(true); try { let finalImageUrl = selectedItem.image; if (tempDetailImage && tempDetailImage.startsWith('data:image')) { finalImageUrl = await uploadToCloudinary(tempDetailImage); } await updateDoc(doc(db, ITEMS_COLLECTION, selectedItem.id), { name: editNameValue.trim(), description: editDescValue, image: finalImageUrl }); setSelectedItem(prev => ({ ...prev, name: editNameValue.trim(), description: editDescValue, image: finalImageUrl })); setIsEditingDetail(false); setTempDetailImage(null); } catch (e) { console.error(e); setError("Lỗi khi lưu thông tin."); } finally { setIsUploading(false); } };
 
   const filteredItems = items.filter(item => { const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()); let matchesZone = true; if (activeZone === 'ALL') matchesZone = true; else if (activeZone === 'UNCATEGORIZED') matchesZone = !item.zoneId || item.zoneId === null; else matchesZone = item.zoneId === activeZone; return matchesSearch && matchesZone; });
   const indexOfLastItem = currentPage * ITEMS_PER_PAGE; const indexOfFirstItem = indexOfLastItem - ITEMS_PER_PAGE; const currentItems = filteredItems.slice(indexOfFirstItem, indexOfLastItem); const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
@@ -373,29 +312,85 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10" onPaste={handlePaste}>
       
-      {/* --- MODAL ĐĂNG NHẬP ADMIN --- */}
+      {/* --- MODAL ĐĂNG NHẬP (CÓ TÊN ĐĂNG NHẬP) --- */}
       {isLoginModalOpen && (
         <div className="fixed inset-0 z-[80] bg-black/50 flex justify-center items-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm animate-in zoom-in-95 relative">
             <button onClick={() => setIsLoginModalOpen(false)} className="absolute top-2 right-2 text-slate-400 hover:text-slate-600"><X size={20}/></button>
             <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Lock size={32}/>
-              </div>
-              <h2 className="text-xl font-bold text-slate-800">Đăng nhập Admin</h2>
-              <p className="text-sm text-slate-500">Nhập mật khẩu để quản lý kho</p>
+              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3"><Lock size={32}/></div>
+              <h2 className="text-xl font-bold text-slate-800">Đăng nhập Quản trị</h2>
             </div>
             <form onSubmit={handleLogin} className="space-y-4">
-              <input 
-                type="password" 
-                value={passwordInput} 
-                onChange={(e) => setPasswordInput(e.target.value)} 
-                className="w-full text-center text-2xl font-bold tracking-widest border-2 border-slate-200 rounded-xl py-3 focus:border-blue-500 outline-none"
-                placeholder="******" 
-                autoFocus
-              />
-              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">Mở Khóa</button>
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">Tên đăng nhập</label>
+                <input type="text" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 focus:border-blue-500 outline-none" placeholder="admin..." autoFocus />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">Mật khẩu</label>
+                <input type="password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 focus:border-blue-500 outline-none" placeholder="******" />
+              </div>
+              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">Đăng Nhập</button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL QUẢN LÝ USER (CHỈ ADMIN THẤY) --- */}
+      {isUserManagerOpen && isAdmin && (
+        <div className="fixed inset-0 z-[85] bg-black/50 flex justify-center items-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center mb-6 border-b pb-4">
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Users className="text-blue-600"/> Quản lý Nhân sự</h2>
+              <button onClick={() => setIsUserManagerOpen(false)} className="bg-slate-100 p-2 rounded-full hover:bg-slate-200"><X size={20}/></button>
+            </div>
+            
+            {/* Form thêm user */}
+            <form onSubmit={handleAddUser} className="bg-blue-50 p-4 rounded-xl mb-6 border border-blue-100">
+              <h3 className="font-bold text-blue-800 mb-3 flex items-center gap-2"><UserPlus size={18}/> Cấp quyền truy cập mới</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input type="text" placeholder="Họ tên (VD: Nguyễn Văn A)" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} className="px-3 py-2 rounded-lg border focus:ring-2 ring-blue-200 outline-none" required />
+                <input type="text" placeholder="Tên đăng nhập" value={newUserUsername} onChange={(e) => setNewUserUsername(e.target.value)} className="px-3 py-2 rounded-lg border focus:ring-2 ring-blue-200 outline-none" required />
+                <input type="text" placeholder="Mật khẩu" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} className="px-3 py-2 rounded-lg border focus:ring-2 ring-blue-200 outline-none" required />
+              </div>
+              <button type="submit" className="mt-3 w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition">Thêm Nhân Sự</button>
+            </form>
+
+            {/* Danh sách user */}
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="text-slate-500 text-sm border-b">
+                    <th className="py-2">Họ tên</th>
+                    <th className="py-2">Tên đăng nhập</th>
+                    <th className="py-2">Mật khẩu</th>
+                    <th className="py-2 text-right">Hành động</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Master Admin luôn hiện đầu */}
+                  <tr className="border-b last:border-0 bg-yellow-50">
+                    <td className="py-3 font-bold flex items-center gap-2"><Shield size={14} className="text-yellow-600"/> {MASTER_USER.name}</td>
+                    <td className="py-3 text-slate-600 font-mono">{MASTER_USER.username}</td>
+                    <td className="py-3 text-slate-400">******</td>
+                    <td className="py-3 text-right"><span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full font-bold">Gốc</span></td>
+                  </tr>
+                  
+                  {/* Danh sách user phụ */}
+                  {adminUsers.map(u => (
+                    <tr key={u.id} className="border-b last:border-0 hover:bg-slate-50">
+                      <td className="py-3 font-medium text-slate-800">{u.name}</td>
+                      <td className="py-3 text-slate-600 font-mono">{u.username}</td>
+                      <td className="py-3 text-slate-600 font-mono">{u.password}</td>
+                      <td className="py-3 text-right">
+                        <button onClick={() => handleDeleteUser(u.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition" title="Xóa quyền"><UserX size={18}/></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {adminUsers.length === 0 && <p className="text-center text-slate-400 py-4 italic">Chưa có nhân sự nào được cấp quyền.</p>}
+            </div>
           </div>
         </div>
       )}
@@ -458,7 +453,7 @@ export default function App() {
                 </div>
                 <p className="text-sm text-slate-400 font-mono mb-4">ID: {selectedItem.id}</p>
                 <div className="mb-6"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label><div className="relative"><select disabled={!isAdmin} value={selectedItem.zoneId || 'UNCATEGORIZED'} onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)} className={`w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition ${isAdmin ? 'cursor-pointer' : 'cursor-default bg-slate-50'}`}><option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>{zones.map(zone => (<option key={zone.id} value={zone.id}>📍 {zone.name} ({zone.location || 'N/A'})</option>))}</select><div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500"><MapPin size={18} /></div></div></div>
-                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{isAdmin && editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-20 text-center font-mono font-bold text-3xl bg-transparent border-b-2 border-blue-500 outline-none" /><button onClick={() => setEditQtyValue(prev => prev + 1)} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-green-50 text-green-500"><Plus size={14}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="ml-2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Check size={16}/></button><button onClick={() => setEditingId(null)} className="bg-slate-200 p-2 rounded hover:bg-slate-300"><X size={16}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span>{isAdmin && <button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button>}</>)}</div></div>
+                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{isAdmin && editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-20 text-center font-mono font-bold text-3xl bg-transparent border-b-2 border-blue-500 outline-none" /><button onClick={() => setEditQtyValue(prev => (prev === "" ? 1 : prev + 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm transition"><Plus size={18}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="w-10 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition"><Check size={18}/></button><button onClick={() => setEditingId(null)} className="w-10 h-10 flex-shrink-0 bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-300 transition"><X size={18}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span>{isAdmin && <button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button>}</>)}</div></div>
                 <div className="flex-1"><div className="flex items-center justify-between mb-3"><h2 className="text-xl font-bold flex items-center gap-2 text-slate-700"><AlignLeft size={24}/> Mô tả chi tiết</h2></div>{isEditingDetail && isAdmin ? (<div className="animate-in fade-in"><textarea className="w-full h-64 p-4 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg leading-relaxed text-slate-700" value={editDescValue} onChange={(e) => setEditDescValue(e.target.value)} placeholder="Nhập thông số kỹ thuật..."></textarea></div>) : (<div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">{selectedItem.description ? (<p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">{selectedItem.description}</p>) : (<p className="text-slate-400 italic text-center py-10">Chưa có mô tả nào cho sản phẩm này.</p>)}</div>)}</div>
               </div>
             </div>
@@ -522,24 +517,24 @@ export default function App() {
             <button onClick={handleExportExcel} className="bg-blue-700 hover:bg-blue-800 text-white p-2.5 rounded-xl border border-blue-500 shadow-inner flex items-center justify-center" title="Xuất Excel"><Download size={20}/></button>
           </div>
 
-          {/* NÚT LOGIN / LOGOUT ADMIN */}
-          {isAdmin ? (
-            <button 
-              onClick={handleLogout}
-              className="bg-red-500 hover:bg-red-600 text-white p-2.5 rounded-xl border border-red-400 shadow-inner flex items-center justify-center"
-              title="Đăng xuất Admin"
-            >
-              <Unlock size={20}/>
-            </button>
-          ) : (
-            <button 
-              onClick={() => setIsLoginModalOpen(true)}
-              className="bg-slate-800 hover:bg-slate-900 text-white p-2.5 rounded-xl border border-slate-600 shadow-inner flex items-center justify-center"
-              title="Đăng nhập Admin"
-            >
-              <LogIn size={20}/>
-            </button>
-          )}
+          {/* USER & LOGIN MANAGER */}
+          <div className="flex gap-2 items-center">
+            {isAdmin && (
+              <button 
+                onClick={() => setIsUserManagerOpen(true)}
+                className="bg-slate-800 hover:bg-slate-900 text-white p-2.5 rounded-xl border border-slate-600 shadow-inner flex items-center justify-center"
+                title="Quản lý Nhân sự"
+              >
+                <Users size={20}/>
+              </button>
+            )}
+
+            {isAdmin ? (
+              <button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 text-white p-2.5 rounded-xl border border-red-400 shadow-inner flex items-center justify-center" title="Đăng xuất"><Unlock size={20}/></button>
+            ) : (
+              <button onClick={() => setIsLoginModalOpen(true)} className="bg-slate-800 hover:bg-slate-900 text-white p-2.5 rounded-xl border border-slate-600 shadow-inner flex items-center justify-center" title="Đăng nhập Admin"><LogIn size={20}/></button>
+            )}
+          </div>
 
           {/* Nút Thêm Mới chỉ hiện khi là Admin */}
           {isAdmin && activeZone !== 'ALL' && (
