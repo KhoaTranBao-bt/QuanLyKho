@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Map, Building 
 } from 'lucide-react';
 
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -47,8 +47,7 @@ const ZONES_COLLECTION = 'inventory_zones';
 const CLOUD_NAME = "dphexeute"; 
 const UPLOAD_PRESET = "kho_linh_kien"; 
 
-// --- CẤU HÌNH PHÂN TRANG ---
-const ITEMS_PER_PAGE = 12; // Số sản phẩm trên mỗi trang
+const ITEMS_PER_PAGE = 12;
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -59,7 +58,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
-  // Form State
+  // Item Form State
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState(1);
   const [newItemImage, setNewItemImage] = useState(''); 
@@ -67,7 +66,13 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   
-  // Pagination State (MỚI)
+  // Zone Form State (MỚI)
+  const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
+  const [editingZone, setEditingZone] = useState(null); // null = tạo mới, object = sửa
+  const [zoneFormName, setZoneFormName] = useState('');
+  const [zoneFormLocation, setZoneFormLocation] = useState('');
+
+  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
 
   // Detail & Edit State
@@ -129,28 +134,54 @@ export default function App() {
     return () => { unsubItems(); unsubZones(); };
   }, [user, selectedItem, isEditingDetail]);
 
-  // --- AUTO RESET PAGE KHI LỌC/TÌM KIẾM ---
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, activeZone]);
 
-  // --- LOGIC VÙNG (ZONES) ---
-  const handleAddZone = async () => {
-    const zoneName = window.prompt("Nhập tên khu vực mới:");
-    if (zoneName && zoneName.trim()) {
-      try { await addDoc(collection(db, ZONES_COLLECTION), { name: zoneName.trim(), createdAt: serverTimestamp(), createdBy: user.uid }); } catch (e) { setError("Không tạo được vùng."); }
-    }
+  // --- LOGIC VÙNG (ZONES - ĐÃ NÂNG CẤP) ---
+  
+  // Mở modal tạo mới
+  const openAddZoneModal = () => {
+    setEditingZone(null);
+    setZoneFormName('');
+    setZoneFormLocation('');
+    setIsZoneModalOpen(true);
   };
 
-  const handleRenameZone = async (zoneId, currentName, e) => {
-    e.stopPropagation(); 
-    const newName = window.prompt("Đổi tên vùng:", currentName);
-    if (newName && newName.trim() && newName !== currentName) {
-      try {
-        await updateDoc(doc(db, ZONES_COLLECTION, zoneId), { name: newName.trim() });
-      } catch (e) {
-        setError("Lỗi khi đổi tên vùng.");
+  // Mở modal sửa
+  const openEditZoneModal = (zone, e) => {
+    e.stopPropagation();
+    setEditingZone(zone);
+    setZoneFormName(zone.name);
+    setZoneFormLocation(zone.location || ''); // Load vị trí cũ
+    setIsZoneModalOpen(true);
+  };
+
+  // Lưu vùng (Tạo mới hoặc Cập nhật)
+  const handleSaveZone = async (e) => {
+    e.preventDefault();
+    if (!zoneFormName.trim()) return;
+
+    try {
+      if (editingZone) {
+        // Cập nhật
+        await updateDoc(doc(db, ZONES_COLLECTION, editingZone.id), {
+          name: zoneFormName.trim(),
+          location: zoneFormLocation.trim()
+        });
+      } else {
+        // Tạo mới
+        await addDoc(collection(db, ZONES_COLLECTION), {
+          name: zoneFormName.trim(),
+          location: zoneFormLocation.trim(),
+          createdAt: serverTimestamp(),
+          createdBy: user.uid
+        });
       }
+      setIsZoneModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      setError("Lỗi khi lưu khu vực.");
     }
   };
 
@@ -291,7 +322,7 @@ export default function App() {
     } catch (e) { console.error(e); setError("Lỗi khi lưu thông tin."); } finally { setIsUploading(false); }
   };
 
-  // --- LOGIC PHÂN TRANG (PAGINATION) ---
+  // --- LOGIC PHÂN TRANG ---
   const filteredItems = items.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
     let matchesZone = true;
@@ -308,12 +339,54 @@ export default function App() {
 
   const paginate = (pageNumber) => {
     setCurrentPage(pageNumber);
-    window.scrollTo({ top: 0, behavior: 'smooth' }); // Cuộn lên đầu khi chuyển trang
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10" onPaste={handlePaste}>
       
+      {/* --- MODAL TẠO/SỬA VÙNG --- */}
+      {isZoneModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex justify-center items-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-in zoom-in-95">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <MapPin className="text-blue-600"/>
+              {editingZone ? 'Chỉnh sửa khu vực' : 'Tạo khu vực mới'}
+            </h2>
+            <form onSubmit={handleSaveZone} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">Tên khu vực (Ví dụ: Tủ A)</label>
+                <input 
+                  type="text" 
+                  value={zoneFormName} 
+                  onChange={(e) => setZoneFormName(e.target.value)} 
+                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 focus:border-blue-500 outline-none font-bold"
+                  placeholder="Nhập tên..."
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">Vị trí chi tiết (Ví dụ: Phòng 101, Tầng 2)</label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    value={zoneFormLocation} 
+                    onChange={(e) => setZoneFormLocation(e.target.value)} 
+                    className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 pl-10 focus:border-blue-500 outline-none"
+                    placeholder="Mô tả vị trí..."
+                  />
+                  <Building size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button type="button" onClick={() => setIsZoneModalOpen(false)} className="flex-1 py-3 rounded-xl bg-slate-100 font-bold text-slate-600 hover:bg-slate-200">Hủy</button>
+                <button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 font-bold text-white hover:bg-blue-700 shadow-lg">Lưu lại</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* --- CHI TIẾT SẢN PHẨM --- */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-white overflow-y-auto animate-in slide-in-from-right duration-300">
@@ -354,7 +427,7 @@ export default function App() {
                   {isEditingDetail ? (<input type="text" value={editNameValue} onChange={(e) => setEditNameValue(e.target.value)} className="w-full text-3xl md:text-4xl font-bold text-slate-800 border-b-2 border-blue-500 focus:outline-none bg-transparent py-2" />) : (<h1 className="text-3xl md:text-4xl font-bold text-slate-800">{selectedItem.name}</h1>)}
                 </div>
                 <p className="text-sm text-slate-400 font-mono mb-4">ID: {selectedItem.id}</p>
-                <div className="mb-6"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label><div className="relative"><select value={selectedItem.zoneId || 'UNCATEGORIZED'} onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)} className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition cursor-pointer"><option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>{zones.map(zone => (<option key={zone.id} value={zone.id}>📍 {zone.name}</option>))}</select><div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500"><MapPin size={18} /></div></div></div>
+                <div className="mb-6"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label><div className="relative"><select value={selectedItem.zoneId || 'UNCATEGORIZED'} onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)} className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition cursor-pointer"><option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>{zones.map(zone => (<option key={zone.id} value={zone.id}>📍 {zone.name} ({zone.location || 'N/A'})</option>))}</select><div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500"><MapPin size={18} /></div></div></div>
                 <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-20 text-center font-mono font-bold text-3xl bg-transparent border-b-2 border-blue-500 outline-none" /><button onClick={() => setEditQtyValue(prev => prev + 1)} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-green-50 text-green-500"><Plus size={14}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="ml-2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Check size={16}/></button><button onClick={() => setEditingId(null)} className="bg-slate-200 p-2 rounded hover:bg-slate-300"><X size={16}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span><button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button></>)}</div></div>
                 <div className="flex-1"><div className="flex items-center justify-between mb-3"><h2 className="text-xl font-bold flex items-center gap-2 text-slate-700"><AlignLeft size={24}/> Mô tả chi tiết</h2></div>{isEditingDetail ? (<div className="animate-in fade-in"><textarea className="w-full h-64 p-4 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg leading-relaxed text-slate-700" value={editDescValue} onChange={(e) => setEditDescValue(e.target.value)} placeholder="Nhập thông số kỹ thuật..."></textarea></div>) : (<div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">{selectedItem.description ? (<p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">{selectedItem.description}</p>) : (<p className="text-slate-400 italic text-center py-10">Chưa có mô tả nào cho sản phẩm này.</p>)}</div>)}</div>
               </div>
@@ -367,7 +440,7 @@ export default function App() {
       <header className="bg-blue-600 text-white shadow-lg sticky top-0 z-20 px-4 pt-4 pb-2">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-2"><Package className="w-8 h-8" /><h1 className="text-xl md:text-2xl font-bold">Kho Linh Kiện</h1></div>
-          {activeZone !== 'ALL' && activeZone !== 'UNCATEGORIZED' && (
+          {activeZone !== 'ALL' && (
             <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-5 py-2.5 rounded-full font-bold flex gap-2 shadow-sm hover:bg-blue-50 transition">
               {isFormOpen ? <Minus size={20} /> : <Plus size={20} />} <span className="hidden sm:inline">{isFormOpen ? 'Đóng' : 'Thêm Mới'}</span>
             </button>
@@ -376,18 +449,30 @@ export default function App() {
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
           <button onClick={() => { setActiveZone('ALL'); setIsFormOpen(false); }} className={`whitespace-nowrap px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 ${activeZone === 'ALL' ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}><LayoutGrid size={18}/> Tất cả</button>
           
-          {/* Nút "Chưa phân vùng" đã bị xóa khỏi menu */}
-
+          {/* Loop Zones */}
           {zones.map(zone => (
             <div key={zone.id} className="relative group">
-              <button onClick={() => { setActiveZone(zone.id); setIsFormOpen(false); }} className={`whitespace-nowrap px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 pr-16 ${activeZone === zone.id ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}><MapPin size={18}/> {zone.name}</button>
+              <button 
+                onClick={() => { setActiveZone(zone.id); setIsFormOpen(false); }}
+                className={`flex flex-col items-start px-4 py-1.5 rounded-lg transition min-w-[120px] pr-12 ${activeZone === zone.id ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}
+              >
+                <div className="flex items-center gap-1 font-bold whitespace-nowrap">
+                  <MapPin size={14}/> {zone.name}
+                </div>
+                {zone.location && (
+                  <div className="text-[10px] opacity-80 whitespace-nowrap max-w-[100px] overflow-hidden text-ellipsis flex items-center gap-1">
+                    <Building size={8}/> {zone.location}
+                  </div>
+                )}
+              </button>
+              
               <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 opacity-50 group-hover:opacity-100 transition">
-                <button onClick={(e) => handleRenameZone(zone.id, zone.name, e)} className="p-1 text-blue-300 hover:text-white" title="Đổi tên"><Edit2 size={14}/></button>
-                <button onClick={(e) => handleDeleteZone(zone.id, e)} className="p-1 text-blue-300 hover:text-red-300" title="Xóa"><X size={14}/></button>
+                <button onClick={(e) => openEditZoneModal(zone, e)} className="p-1 text-blue-300 hover:text-white" title="Sửa vùng"><Edit2 size={14}/></button>
+                <button onClick={(e) => handleDeleteZone(zone.id, e)} className="p-1 text-blue-300 hover:text-red-300" title="Xóa vùng"><X size={14}/></button>
               </div>
             </div>
           ))}
-          <button onClick={handleAddZone} className="whitespace-nowrap px-4 py-2 rounded-lg font-bold border-2 border-blue-400 border-dashed text-blue-100 hover:bg-blue-500 hover:text-white transition flex items-center gap-2"><Plus size={18}/> Tạo vùng</button>
+          <button onClick={openAddZoneModal} className="whitespace-nowrap px-4 py-2 rounded-lg font-bold border-2 border-blue-400 border-dashed text-blue-100 hover:bg-blue-500 hover:text-white transition flex items-center gap-2"><Plus size={18}/> Tạo vùng</button>
         </div>
       </header>
 
@@ -405,7 +490,7 @@ export default function App() {
           </div>
         )}
 
-        {isFormOpen && activeZone !== 'ALL' && activeZone !== 'UNCATEGORIZED' && (
+        {isFormOpen && activeZone !== 'ALL' && (
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200 animate-in slide-in-from-top-4" onPaste={handlePaste}>
             <div className="flex justify-between items-center mb-6"><h2 className="font-bold text-2xl text-slate-800">Thêm vào: {zones.find(z => z.id === activeZone)?.name}</h2><span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">Hỗ trợ dán ảnh (Ctrl+V)</span></div>
             <form onSubmit={handleAddItem} className="space-y-6">
@@ -418,13 +503,11 @@ export default function App() {
 
         <div className="relative mb-8"><input type="text" placeholder={`Tìm kiếm trong ${activeZone === 'ALL' ? 'tất cả kho' : 'vùng này'}...`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" /><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-6 h-6" /></div>
 
-        {/* --- DANH SÁCH & PHÂN TRANG --- */}
         {!loading && filteredItems.length === 0 ? (
-          <div className="text-center py-16 text-slate-400 bg-white rounded-3xl border-2 border-dashed border-slate-200"><Package className="w-16 h-16 mx-auto mb-4 opacity-30" /><p className="text-xl font-medium">{activeZone === 'ALL' ? 'Kho chưa có gì cả' : 'Khu vực này đang trống'}</p>{activeZone !== 'ALL' && activeZone !== 'UNCATEGORIZED' && (<p className="text-sm mt-2 text-blue-500 cursor-pointer hover:underline" onClick={() => setIsFormOpen(true)}>Thêm món đầu tiên ngay</p>)}</div>
+          <div className="text-center py-16 text-slate-400 bg-white rounded-3xl border-2 border-dashed border-slate-200"><Package className="w-16 h-16 mx-auto mb-4 opacity-30" /><p className="text-xl font-medium">{activeZone === 'ALL' ? 'Kho chưa có gì cả' : 'Khu vực này đang trống'}</p>{activeZone !== 'ALL' && (<p className="text-sm mt-2 text-blue-500 cursor-pointer hover:underline" onClick={() => setIsFormOpen(true)}>Thêm món đầu tiên ngay</p>)}</div>
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{currentItems.map((item) => (<div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300"><div onClick={() => openDetail(item)} className="h-80 w-full bg-white relative group border-b border-slate-50 p-4 cursor-pointer"><img src={item.image} alt={item.name} className="w-full h-full object-cover rounded-lg transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} /></div><div className="p-5 flex-1 flex flex-col justify-between"><div className="mb-4"><h3 onClick={() => openDetail(item)} className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1 cursor-pointer hover:text-blue-600 transition">{item.name}</h3>{activeZone === 'ALL' && (<span className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded-full">{zones.find(z => z.id === item.zoneId)?.name || 'Chưa phân vùng'}</span>)}</div><div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 min-h-[60px]">{editingId === item.id ? (<div className="flex items-center justify-between w-full animate-in fade-in duration-200 gap-2"><button onClick={() => setEditQtyValue(prev => (prev === "" || prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-red-200 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-500 shadow-sm transition"><Minus size={18}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-full h-10 text-center font-mono font-bold text-2xl bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800" /><button onClick={() => setEditQtyValue(prev => (prev === "" ? 1 : prev + 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm transition"><Plus size={18}/></button><button onClick={() => saveQuantity(item.id)} className="w-10 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition"><Check size={18}/></button><button onClick={() => setEditingId(null)} className="w-10 h-10 flex-shrink-0 bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-300 transition"><X size={18}/></button></div>) : (<div className="flex items-center justify-between w-full"><div className="flex flex-col"><span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Số lượng</span><span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span></div><button onClick={() => startEditingQty(item)} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center gap-2"><Edit3 size={16}/> Sửa</button></div>)}</div></div></div>))}</div>
-            {/* Phân trang UI */}
             {totalPages > 1 && (
               <div className="flex justify-center mt-12 gap-2">
                 <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className="p-2 rounded-lg bg-white border hover:bg-slate-50 disabled:opacity-50"><ChevronLeft size={20}/></button>
