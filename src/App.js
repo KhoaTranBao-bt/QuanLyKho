@@ -274,7 +274,7 @@ export default function App() {
     for (let i = 0; i < items.length; i++) {
       rows.push({ hpt: 80 }); 
       const rowIndex = i + 2; const cellRef = `B${rowIndex}`; const linkRef = `F${rowIndex}`; 
-      if (items[i].image) { worksheet[cellRef] = { t: 'f', f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 1, 500,500)`, v: 'Loading Image...' }; }
+      if (items[i].image) { worksheet[cellRef] = { t: 'f', f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 3, 500,500)`, v: 'Loading Image...' }; }
     }
     worksheet['!rows'] = rows;
     const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Kho Linh Kien");
