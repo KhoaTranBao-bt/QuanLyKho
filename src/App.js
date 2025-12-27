@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput 
 } from 'lucide-react';
 
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -79,7 +79,6 @@ export default function App() {
   
   // Cropper State
   const [imageSrc, setImageSrc] = useState(null);
-  // Khởi tạo crop mặc định rỗng để tránh lỗi tính toán ban đầu
   const [crop, setCrop] = useState(); 
   const [completedCrop, setCompletedCrop] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
@@ -104,6 +103,7 @@ export default function App() {
       const loadedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setItems(loadedItems);
       setLoading(false);
+      // Auto update detail view
       if (selectedItem) {
         const updatedItem = loadedItems.find(i => i.id === selectedItem.id);
         if (updatedItem) setSelectedItem(updatedItem);
@@ -137,6 +137,17 @@ export default function App() {
     }
   };
 
+  // --- LOGIC ĐỔI VÙNG TRONG CHI TIẾT ---
+  const handleChangeItemZone = async (itemId, newZoneId) => {
+    try {
+      const zoneValue = newZoneId === 'UNCATEGORIZED' ? null : newZoneId;
+      await updateDoc(doc(db, ITEMS_COLLECTION, itemId), { zoneId: zoneValue });
+    } catch (e) {
+      console.error(e);
+      setError("Lỗi khi chuyển vùng sản phẩm.");
+    }
+  };
+
   // --- LOGIC VIEW ẢNH CHI TIẾT ---
   const handleDetailImageLoad = (e) => {
     const img = e.target;
@@ -156,23 +167,9 @@ export default function App() {
   const handleViewMouseMove = (e) => { if (!isDraggingView) return; e.preventDefault(); setViewPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }); };
   const handleViewMouseUp = () => { setIsDraggingView(false); };
 
-  // --- LOGIC UPLOAD & CROP (ĐÃ FIX LỖI MOBILE) ---
-  
-  // 1. Hàm helper để tạo crop full ảnh
+  // --- LOGIC UPLOAD & CROP ---
   function centerAspectCrop(mediaWidth, mediaHeight) {
-    return centerCrop(
-      makeAspectCrop(
-        {
-          unit: '%',
-          width: 90, // Mặc định chọn 90% ảnh
-        },
-        undefined, // Tự do tỷ lệ
-        mediaWidth,
-        mediaHeight,
-      ),
-      mediaWidth,
-      mediaHeight,
-    )
+    return centerCrop(makeAspectCrop({ unit: '%', width: 90 }, undefined, mediaWidth, mediaHeight), mediaWidth, mediaHeight)
   }
 
   const onFileChange = (e) => {
@@ -180,12 +177,7 @@ export default function App() {
       const file = e.target.files[0];
       if (file.size > 10 * 1024 * 1024) { setError("Ảnh quá lớn (>10MB)."); return; }
       const reader = new FileReader();
-      reader.addEventListener('load', () => { 
-        setImageSrc(reader.result); 
-        setIsCropping(true); 
-        setError(''); 
-        // Không setCrop ngay ở đây, để onLoad xử lý chính xác theo kích thước thật
-      });
+      reader.addEventListener('load', () => { setImageSrc(reader.result); setIsCropping(true); setError(''); });
       reader.readAsDataURL(file);
     }
   };
@@ -203,44 +195,23 @@ export default function App() {
     }
   };
 
-  // 2. Sự kiện khi ảnh Load vào Cropper (FIX QUAN TRỌNG)
   const onImageLoad = (e) => {
     const { width, height } = e.currentTarget;
     imgRef.current = e.currentTarget;
-    
-    // Tự động tạo vùng chọn mặc định ngay khi ảnh load
-    // Điều này ngăn completedCrop bị null
     const initialCrop = centerAspectCrop(width, height);
     setCrop(initialCrop);
-    setCompletedCrop(initialCrop); // Set luôn completedCrop ban đầu
+    setCompletedCrop(initialCrop); 
   };
 
   const showCroppedImage = async () => {
-    // FIX: Kiểm tra kỹ nếu không có completedCrop hoặc width/height = 0
-    // Thì dùng luôn ảnh gốc (Fallback) -> Tránh lỗi đỏ
-    if (
-      !completedCrop || 
-      !imgRef.current || 
-      completedCrop.width === 0 || 
-      completedCrop.height === 0
-    ) {
-      setNewItemImage(imageSrc); // Dùng ảnh gốc
-      setIsCropping(false);
-      setImageSrc(null);
-      return;
+    if (!completedCrop || !imgRef.current || completedCrop.width === 0 || completedCrop.height === 0) {
+      setNewItemImage(imageSrc); setIsCropping(false); setImageSrc(null); return;
     }
-
     try { 
       const base64 = await getCroppedImg(imgRef.current, completedCrop, 'newFile.jpeg'); 
-      setNewItemImage(base64); 
-      setIsCropping(false); 
-      setImageSrc(null); 
+      setNewItemImage(base64); setIsCropping(false); setImageSrc(null); 
     } catch (e) { 
-      // Nếu lỗi vẫn xảy ra, fallback về ảnh gốc luôn
-      console.error(e);
-      setNewItemImage(imageSrc);
-      setIsCropping(false);
-      setImageSrc(null);
+      setNewItemImage(imageSrc); setIsCropping(false); setImageSrc(null);
     }
   };
 
@@ -311,12 +282,36 @@ export default function App() {
               <button onClick={() => handleDeleteItem(selectedItem.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg font-bold flex gap-1 items-center transition"><Trash2 size={20}/> Xóa</button>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px]">
-                <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-full object-cover" />
+              <div className="bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative group cursor-grab active:cursor-grabbing" onMouseDown={handleViewMouseDown} onMouseMove={handleViewMouseMove} onMouseUp={handleViewMouseUp} onMouseLeave={handleViewMouseUp}>
+                <img src={selectedItem.image} alt={selectedItem.name} onLoad={handleDetailImageLoad} className="absolute top-1/2 left-1/2 max-w-none transition-transform duration-75 ease-out" draggable="false" style={{ transform: `translate(-50%, -50%) scale(${viewScale}) translate(${viewPosition.x / viewScale}px, ${viewPosition.y / viewScale}px)` }} />
               </div>
+              
               <div className="flex flex-col">
                 <h1 className="text-3xl md:text-4xl font-bold text-slate-800 mb-2">{selectedItem.name}</h1>
-                <p className="text-sm text-slate-400 font-mono mb-6">ID: {selectedItem.id}</p>
+                <p className="text-sm text-slate-400 font-mono mb-4">ID: {selectedItem.id}</p>
+
+                {/* --- KHU VỰC CHUYỂN ĐỔI VÙNG (MỚI) --- */}
+                <div className="mb-6">
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                    <FolderInput size={14}/> Khu vực lưu trữ
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={selectedItem.zoneId || 'UNCATEGORIZED'} 
+                      onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)}
+                      className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition cursor-pointer"
+                    >
+                      <option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>
+                      {zones.map(zone => (
+                        <option key={zone.id} value={zone.id}>📍 {zone.name}</option>
+                      ))}
+                    </select>
+                    <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500">
+                      <MapPin size={18} />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4"><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span></div></div>
                 <div className="flex-1"><div className="flex items-center justify-between mb-3"><h2 className="text-xl font-bold flex items-center gap-2 text-slate-700"><AlignLeft size={24}/> Mô tả chi tiết</h2>{!isEditingDesc && (<button onClick={() => setIsEditingDesc(true)} className="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-lg font-bold text-sm flex gap-1 items-center transition"><Edit3 size={16}/> Sửa nội dung</button>)}</div>{isEditingDesc ? (<div className="animate-in fade-in"><textarea className="w-full h-64 p-4 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg leading-relaxed text-slate-700" value={descValue} onChange={(e) => setDescValue(e.target.value)} placeholder="Nhập thông số kỹ thuật..."></textarea><div className="flex gap-3 mt-3"><button onClick={saveDescription} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 flex gap-2 items-center shadow-lg"><Save size={18}/> Lưu Lại</button><button onClick={() => { setIsEditingDesc(false); setDescValue(selectedItem.description || ""); }} className="bg-slate-200 text-slate-600 px-6 py-2 rounded-lg font-bold hover:bg-slate-300">Hủy</button></div></div>) : (<div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">{selectedItem.description ? (<p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">{selectedItem.description}</p>) : (<p className="text-slate-400 italic text-center py-10">Chưa có mô tả nào cho sản phẩm này.</p>)}</div>)}</div>
               </div>
@@ -361,14 +356,7 @@ export default function App() {
             {isCropping ? (
               <div className="flex flex-col gap-4 animate-in fade-in">
                 <div className="relative w-full bg-slate-900 rounded-xl overflow-hidden border-4 border-blue-500 shadow-2xl flex justify-center items-center p-4">
-                  <ReactCrop 
-                    crop={crop} 
-                    onChange={(_, percentCrop) => setCrop(percentCrop)} 
-                    onComplete={(c) => setCompletedCrop(c)} 
-                    aspect={undefined}
-                    minWidth={20}
-                    minHeight={20}
-                  >
+                  <ReactCrop crop={crop} onChange={(_, percentCrop) => setCrop(percentCrop)} onComplete={(c) => setCompletedCrop(c)} aspect={undefined} minWidth={20} minHeight={20}>
                     <img src={imageSrc} alt="Upload" onLoad={onImageLoad} style={{ maxHeight: '70vh', maxWidth: '100%', objectFit: 'contain' }} />
                   </ReactCrop>
                 </div>
