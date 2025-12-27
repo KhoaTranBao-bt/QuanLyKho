@@ -25,7 +25,9 @@ import {
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css'; 
 import getCroppedImg from './cropUtils'; 
-import * as XLSX from 'xlsx'; // --- THƯ VIỆN XUẤT EXCEL ---
+
+// --- THƯ VIỆN EXCEL NHẸ (SHEETJS) ---
+import * as XLSX from 'xlsx';
 
 // --- CẤU HÌNH FIREBASE ---
 const firebaseConfig = {
@@ -152,45 +154,42 @@ export default function App() {
     setCurrentPage(1);
   }, [searchTerm, activeZone]);
 
-  // --- LOGIC XUẤT EXCEL (MỚI) ---
+  // --- LOGIC XUẤT EXCEL (ĐÃ BỎ MÔ TẢ) ---
   const handleExportExcel = () => {
     if (items.length === 0) {
-      alert("Kho đang trống, không có gì để xuất!");
-      return;
+      alert("Kho đang trống!"); return;
     }
 
     // 1. Chuẩn bị dữ liệu
     const dataToExport = items.map(item => {
-      // Tìm thông tin vùng tương ứng
       const zone = zones.find(z => z.id === item.zoneId);
-      
       return {
         'Tên Linh Kiện': item.name,
         'Số Lượng': item.quantity,
         'Thùng Chứa': zone ? zone.name : 'Chưa phân vùng',
         'Vị Trí/Phòng': zone ? zone.location || 'Chưa cập nhật' : '---',
-        'Mô Tả': item.description || '',
-        'Link Hình Ảnh': item.image
+        // ĐÃ XÓA TRƯỜNG MÔ TẢ TẠI ĐÂY
+        'Link Ảnh': item.image
       };
     });
 
     // 2. Tạo Worksheet
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
 
-    // Tự động chỉnh độ rộng cột cho đẹp
+    // Chỉnh độ rộng cột
     const wscols = [
       {wch: 30}, // Tên
       {wch: 10}, // SL
       {wch: 20}, // Thùng
       {wch: 25}, // Vị trí
-      {wch: 40}, // Mô tả
-      {wch: 50}, // Link ảnh
+      // ĐÃ XÓA ĐỘ RỘNG CỘT MÔ TẢ
+      {wch: 60}, // Link Ảnh
     ];
     worksheet['!cols'] = wscols;
 
     // 3. Tạo Workbook
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Danh Sach Linh Kien");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Kho Linh Kien");
 
     // 4. Xuất file
     const date = new Date().toISOString().slice(0,10);
@@ -537,7 +536,16 @@ export default function App() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
         {error && <div className="mb-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded flex items-center gap-2"><AlertCircle size={20} /><p>{error}</p></div>}
-        {(loading || isUploading) && (<div className="fixed inset-0 bg-black/30 z-50 flex justify-center items-center backdrop-blur-sm"><div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center"><Loader2 className="animate-spin text-blue-600 w-12 h-12 mb-3" /><p className="font-bold text-lg text-slate-700">{isUploading ? "Đang xử lý ảnh..." : "Đang tải..."}</p></div></div>)}
+        
+        {/* --- LOADING MODAL --- */}
+        {(loading || isUploading) && (
+          <div className="fixed inset-0 bg-black/30 z-50 flex justify-center items-center backdrop-blur-sm">
+            <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center">
+              <Loader2 className="animate-spin text-blue-600 w-12 h-12 mb-3" />
+              <p className="font-bold text-lg text-slate-700">Đang xử lý...</p>
+            </div>
+          </div>
+        )}
 
         {isCropping && (
           <div className="fixed inset-0 z-[60] bg-black/80 flex justify-center items-center p-4">
