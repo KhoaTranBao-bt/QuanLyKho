@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Building, Navigation 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Building, Navigation, Layers, ChevronDown 
 } from 'lucide-react';
 
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -58,7 +58,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
-  // Item Form State
+  // Form State
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState(1);
   const [newItemImage, setNewItemImage] = useState(''); 
@@ -66,7 +66,8 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   
-  // Zone Form State
+  // Zone & Dropdown State (MỚI)
+  const [isZoneDropdownOpen, setIsZoneDropdownOpen] = useState(false); // Trạng thái mở menu dọc
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
   const [editingZone, setEditingZone] = useState(null);
   const [zoneFormName, setZoneFormName] = useState('');
@@ -99,6 +100,9 @@ export default function App() {
   const [isCropping, setIsCropping] = useState(false);
   const [cropContext, setCropContext] = useState('ADD'); 
   const imgRef = useRef(null); 
+  
+  // Ref cho Dropdown để click ra ngoài thì đóng
+  const dropdownRef = useRef(null);
 
   // Auth
   useEffect(() => {
@@ -110,6 +114,17 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsZoneDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [dropdownRef]);
 
   // --- DATA FETCHING ---
   useEffect(() => {
@@ -144,6 +159,7 @@ export default function App() {
     setZoneFormName('');
     setZoneFormLocation('');
     setIsZoneModalOpen(true);
+    setIsZoneDropdownOpen(false); // Đóng menu khi mở modal
   };
 
   const openEditZoneModal = (zone, e) => {
@@ -152,6 +168,7 @@ export default function App() {
     setZoneFormName(zone.name);
     setZoneFormLocation(zone.location || '');
     setIsZoneModalOpen(true);
+    setIsZoneDropdownOpen(false);
   };
 
   const handleSaveZone = async (e) => {
@@ -180,7 +197,12 @@ export default function App() {
 
   const handleDeleteZone = async (zoneId, e) => {
     e.stopPropagation();
-    if (window.confirm("Xóa vùng này? Sản phẩm sẽ chuyển về 'Chưa phân vùng'.")) { try { await deleteDoc(doc(db, ZONES_COLLECTION, zoneId)); } catch (e) { setError("Lỗi khi xóa vùng."); } }
+    if (window.confirm("Xóa vùng này? Sản phẩm sẽ chuyển về 'Chưa phân vùng'.")) { 
+      try { 
+        await deleteDoc(doc(db, ZONES_COLLECTION, zoneId)); 
+        if(activeZone === zoneId) setActiveZone('ALL'); // Reset về ALL nếu xóa vùng đang chọn
+      } catch (e) { setError("Lỗi khi xóa vùng."); } 
+    }
   };
 
   const handleChangeItemZone = async (itemId, newZoneId) => {
@@ -335,6 +357,11 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Tìm tên vùng đang active để hiển thị trên nút dropdown
+  const activeZoneName = activeZone === 'ALL' 
+    ? 'Tất cả thùng chứa' 
+    : (zones.find(z => z.id === activeZone)?.name || 'Không xác định');
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10" onPaste={handlePaste}>
       
@@ -344,8 +371,8 @@ export default function App() {
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-in zoom-in-95">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><MapPin className="text-blue-600"/>{editingZone ? 'Chỉnh sửa khu vực' : 'Tạo khu vực mới'}</h2>
             <form onSubmit={handleSaveZone} className="space-y-4">
-              <div><label className="block text-sm font-bold text-slate-500 mb-1">Tên khu vực (Ví dụ: Tủ A)</label><input type="text" value={zoneFormName} onChange={(e) => setZoneFormName(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 focus:border-blue-500 outline-none font-bold" placeholder="Nhập tên..." required /></div>
-              <div><label className="block text-sm font-bold text-slate-500 mb-1">Vị trí chi tiết (Ví dụ: Phòng 101, Tầng 2)</label><div className="relative"><input type="text" value={zoneFormLocation} onChange={(e) => setZoneFormLocation(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 pl-10 focus:border-blue-500 outline-none" placeholder="Mô tả vị trí..." /><Building size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/></div></div>
+              <div><label className="block text-sm font-bold text-slate-500 mb-1">Tên khu vực</label><input type="text" value={zoneFormName} onChange={(e) => setZoneFormName(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 focus:border-blue-500 outline-none font-bold" placeholder="Nhập tên..." required /></div>
+              <div><label className="block text-sm font-bold text-slate-500 mb-1">Vị trí chi tiết</label><div className="relative"><input type="text" value={zoneFormLocation} onChange={(e) => setZoneFormLocation(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2 pl-10 focus:border-blue-500 outline-none" placeholder="Mô tả vị trí..." /><Building size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/></div></div>
               <div className="flex gap-3 mt-6"><button type="button" onClick={() => setIsZoneModalOpen(false)} className="flex-1 py-3 rounded-xl bg-slate-100 font-bold text-slate-600 hover:bg-slate-200">Hủy</button><button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 font-bold text-white hover:bg-blue-700 shadow-lg">Lưu lại</button></div>
             </form>
           </div>
@@ -401,39 +428,86 @@ export default function App() {
         </div>
       )}
 
-      {/* --- HEADER --- */}
-      <header className="bg-blue-600 text-white shadow-lg sticky top-0 z-20 px-4 pt-4 pb-2">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-2"><Package className="w-8 h-8" /><h1 className="text-xl md:text-2xl font-bold">Kho Linh Kiện</h1></div>
+      {/* --- HEADER CHÍNH --- */}
+      <header className="bg-blue-600 text-white shadow-lg sticky top-0 z-20 px-4 pt-4 pb-4">
+        <div className="flex justify-between items-center mb-0">
+          <div className="flex items-center gap-2">
+            <Package className="w-8 h-8" />
+            <h1 className="text-xl md:text-2xl font-bold hidden sm:block">Kho Linh Kiện</h1>
+          </div>
+
+          {/* --- DROPDOWN MENU VÙNG (MỚI) --- */}
+          <div className="relative mx-4 flex-1 max-w-md" ref={dropdownRef}>
+            <button 
+              onClick={() => setIsZoneDropdownOpen(!isZoneDropdownOpen)}
+              className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-between transition border border-blue-500 shadow-inner"
+            >
+              <span className="flex items-center gap-2 truncate">
+                <Layers size={18} />
+                {activeZoneName}
+              </span>
+              <ChevronDown size={18} className={`transition-transform duration-200 ${isZoneDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isZoneDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 text-slate-800">
+                {/* Option: Tất cả */}
+                <button 
+                  onClick={() => { setActiveZone('ALL'); setIsZoneDropdownOpen(false); setIsFormOpen(false); }}
+                  className={`w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100 ${activeZone === 'ALL' ? 'bg-blue-50 text-blue-600' : ''}`}
+                >
+                  <div className="p-2 bg-slate-100 rounded-full"><LayoutGrid size={16}/></div>
+                  <span className="font-bold">Tất cả thùng chứa</span>
+                </button>
+
+                {/* List Zones */}
+                <div className="max-h-[300px] overflow-y-auto">
+                  {zones.length === 0 ? (
+                    <div className="p-4 text-center text-slate-400 text-sm">Chưa có vùng nào</div>
+                  ) : (
+                    zones.map(zone => (
+                      <div key={zone.id} className={`group flex items-center justify-between px-4 py-3 hover:bg-slate-50 border-b border-slate-100 last:border-0 ${activeZone === zone.id ? 'bg-blue-50' : ''}`}>
+                        <button 
+                          onClick={() => { setActiveZone(zone.id); setIsZoneDropdownOpen(false); setIsFormOpen(false); }}
+                          className="flex-1 flex items-center gap-3 text-left"
+                        >
+                          <div className={`p-2 rounded-full ${activeZone === zone.id ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                            <MapPin size={16}/>
+                          </div>
+                          <div>
+                            <div className={`font-bold ${activeZone === zone.id ? 'text-blue-700' : 'text-slate-700'}`}>{zone.name}</div>
+                            {zone.location && <div className="text-xs text-slate-400 flex items-center gap-1"><Building size={10}/> {zone.location}</div>}
+                          </div>
+                        </button>
+                        
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={(e) => openEditZoneModal(zone, e)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 size={16}/></button>
+                          <button onClick={(e) => handleDeleteZone(zone.id, e)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><X size={16}/></button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Footer: Tạo mới */}
+                <div className="p-2 bg-slate-50 border-t border-slate-100">
+                  <button 
+                    onClick={openAddZoneModal}
+                    className="w-full flex justify-center items-center gap-2 bg-white border border-slate-200 py-2.5 rounded-lg font-bold text-blue-600 hover:bg-blue-50 transition"
+                  >
+                    <Plus size={18}/> Tạo khu vực mới
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {activeZone !== 'ALL' && (
-            <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-5 py-2.5 rounded-full font-bold flex gap-2 shadow-sm hover:bg-blue-50 transition">
+            <button onClick={() => setIsFormOpen(!isFormOpen)} className="bg-white text-blue-600 px-4 py-2.5 rounded-xl font-bold flex gap-2 shadow-sm hover:bg-blue-50 transition whitespace-nowrap">
               {isFormOpen ? <Minus size={20} /> : <Plus size={20} />} <span className="hidden sm:inline">{isFormOpen ? 'Đóng' : 'Thêm Mới'}</span>
             </button>
           )}
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-          <button onClick={() => { setActiveZone('ALL'); setIsFormOpen(false); }} className={`whitespace-nowrap px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 ${activeZone === 'ALL' ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}><LayoutGrid size={18}/> Tất cả</button>
-          
-          {/* Loop Zones */}
-          {zones.map(zone => (
-            <div key={zone.id} className="relative group">
-              <button 
-                onClick={() => { setActiveZone(zone.id); setIsFormOpen(false); }}
-                className={`flex flex-col items-start px-4 py-1.5 rounded-lg transition min-w-[120px] pr-12 ${activeZone === zone.id ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}
-              >
-                <div className="flex items-center gap-1 font-bold whitespace-nowrap">
-                  <MapPin size={14}/> {zone.name}
-                </div>
-                {/* --- CHỈ HIỂN THỊ TÊN VÙNG, KHÔNG HIỆN VỊ TRÍ TRÊN TAB ĐỂ GỌN --- */}
-              </button>
-              
-              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 opacity-50 group-hover:opacity-100 transition">
-                <button onClick={(e) => openEditZoneModal(zone, e)} className="p-1 text-blue-300 hover:text-white" title="Sửa vùng"><Edit2 size={14}/></button>
-                <button onClick={(e) => handleDeleteZone(zone.id, e)} className="p-1 text-blue-300 hover:text-red-300" title="Xóa vùng"><X size={14}/></button>
-              </div>
-            </div>
-          ))}
-          <button onClick={openAddZoneModal} className="whitespace-nowrap px-4 py-2 rounded-lg font-bold border-2 border-blue-400 border-dashed text-blue-100 hover:bg-blue-500 hover:text-white transition flex items-center gap-2"><Plus size={18}/> Tạo vùng</button>
         </div>
       </header>
 
@@ -462,21 +536,14 @@ export default function App() {
           </div>
         )}
 
-        {/* --- BANNER VỊ TRÍ ĐẸP MẮT (MỚI) --- */}
+        {/* --- BANNER VỊ TRÍ (Giữ nguyên) --- */}
         {activeZone !== 'ALL' && activeZone !== 'UNCATEGORIZED' && (() => {
           const currentZone = zones.find(z => z.id === activeZone);
           if (currentZone && currentZone.location) {
             return (
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-4 rounded-xl mb-6 flex items-center gap-4 shadow-sm animate-in fade-in slide-in-from-top-2">
-                <div className="bg-white p-3 rounded-full shadow-sm text-blue-600">
-                  <Navigation size={24} />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-0.5">Vị trí lưu trữ</p>
-                  <p className="text-lg font-bold text-slate-700 flex items-center gap-2">
-                    {currentZone.location}
-                  </p>
-                </div>
+                <div className="bg-white p-3 rounded-full shadow-sm text-blue-600"><Navigation size={24} /></div>
+                <div><p className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-0.5">Vị trí lưu trữ</p><p className="text-lg font-bold text-slate-700 flex items-center gap-2">{currentZone.location}</p></div>
               </div>
             );
           }
