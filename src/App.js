@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Building, Navigation, Layers, ChevronDown, Download 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight, Building, Navigation, Layers, ChevronDown, Download 
 } from 'lucide-react';
 
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -154,60 +154,41 @@ export default function App() {
     setCurrentPage(1);
   }, [searchTerm, activeZone]);
 
-  // --- LOGIC XUẤT EXCEL (DÙNG HÀM IMAGE) ---
+  // --- LOGIC XUẤT EXCEL ---
   const handleExportExcel = () => {
     if (items.length === 0) {
       alert("Kho đang trống!"); return;
     }
-
-    // 1. Chuẩn bị dữ liệu (Khớp với thứ tự cột bạn muốn)
     const dataToExport = items.map(item => {
       const zone = zones.find(z => z.id === item.zoneId);
       return {
         'Tên Linh Kiện': item.name,
-        'Hình Ảnh': '', // Cột B: Để trống để lát chèn công thức
+        'Hình Ảnh': '', 
         'Số Lượng': item.quantity,
         'Thùng Chứa': zone ? zone.name : 'Chưa phân vùng',
         'Vị Trí': zone ? zone.location || 'Chưa cập nhật' : '---',
-        'Link Ảnh Gốc': item.image // Cột F: Link gốc
+        'Link Ảnh Gốc': item.image 
       };
     });
-
-    // 2. Tạo Worksheet
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-
-    // --- CẤU HÌNH CỘT ---
     worksheet['!cols'] = [
-      { wch: 30 }, // A: Tên
-      { wch: 100 }, // B: Hình Ảnh (Preview)
-      { wch: 10 }, // C: SL
-      { wch: 20 }, // D: Thùng
-      { wch: 25 }, // E: Vị trí
-      { wch: 50 }, // F: Link Gốc
+      { wch: 30 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 50 },
     ];
-
-    // --- CẤU HÌNH DÒNG (Quan trọng: Phải cao lên để hiện ảnh) ---
-    const rows = [{ hpt: 20 }]; // Header height
-    // Duyệt qua từng dòng dữ liệu để set chiều cao và chèn công thức
+    const rows = [{ hpt: 20 }]; 
     for (let i = 0; i < items.length; i++) {
-      rows.push({ hpt: 80 }); // Data row height (80 points ~ 106 pixels)
-      
-      const rowIndex = i + 2; // Excel bắt đầu từ dòng 2
-      const cellRef = `B${rowIndex}`; // Ô chứa ảnh
-      const linkRef = `F${rowIndex}`; // Ô chứa link (Cột F)
-
-      // Chèn công thức IMAGE vào cột B
+      rows.push({ hpt: 80 }); 
+      const rowIndex = i + 2; 
+      const cellRef = `B${rowIndex}`; 
+      const linkRef = `F${rowIndex}`; 
       if (items[i].image) {
         worksheet[cellRef] = {
-          t: 'f', // Type: Formula
-          f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 3, 500, 500)`, // Công thức thần thánh
-          v: 'Loading Image...', // Giá trị hiển thị fallback
+          t: 'f', 
+          f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 1)`, // Fit cell
+          v: 'Loading Image...',
         };
       }
     }
     worksheet['!rows'] = rows;
-
-    // 3. Tạo Workbook & Xuất
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Kho Linh Kien");
     const date = new Date().toISOString().slice(0,10);
@@ -375,7 +356,12 @@ export default function App() {
     } catch (err) { setError("Lỗi khi lưu."); } finally { setIsUploading(false); }
   };
 
-  const handleDeleteItem = async (id) => { if (window.confirm("Xóa linh kiện này?")) { try { await deleteDoc(doc(db, ITEMS_COLLECTION, id)); setSelectedItem(null); } catch (err) { setError("Lỗi xóa."); } } };
+  const handleDeleteItem = async (id) => { 
+    if (window.confirm("Xóa linh kiện này?")) { 
+      try { await deleteDoc(doc(db, ITEMS_COLLECTION, id)); setSelectedItem(null); } 
+      catch (err) { setError("Lỗi xóa."); } 
+    } 
+  };
   
   const startEditingQty = (item) => { setEditingId(item.id); setEditQtyValue(item.quantity); };
   const handleEditQtyChange = (val) => { const v = parseInt(val); if (!isNaN(v) && v >= 0) setEditQtyValue(v); else if (val === "") setEditQtyValue(""); };
@@ -466,10 +452,21 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* --- ẢNH ĐÃ SỬA: OBJECT-CONTAIN --- */}
               <div className="relative group">
-                <div className={`bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative ${!isEditingDetail ? 'cursor-grab active:cursor-grabbing' : ''}`} onMouseDown={!isEditingDetail ? handleViewMouseDown : undefined} onMouseMove={!isEditingDetail ? handleViewMouseMove : undefined} onMouseUp={!isEditingDetail ? handleViewMouseUp : undefined} onMouseLeave={!isEditingDetail ? handleViewMouseUp : undefined}>
-                  <img src={tempDetailImage || selectedItem.image} alt="Detail" onLoad={handleDetailImageLoad} className={`absolute top-1/2 left-1/2 max-w-none transition-transform duration-75 ease-out ${isEditingDetail ? 'opacity-80 blur-[2px]' : ''}`} draggable="false" style={{ transform: `translate(-50%, -50%) scale(${viewScale}) translate(${viewPosition.x / viewScale}px, ${viewPosition.y / viewScale}px)` }} />
-                  {isEditingDetail && (<label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer bg-black/20 hover:bg-black/30 transition z-20"><div className="bg-white p-4 rounded-full shadow-2xl mb-2"><Camera size={32} className="text-blue-600"/></div><span className="font-bold text-white text-lg shadow-black drop-shadow-md">Thay đổi ảnh</span><input type="file" accept="image/*" onChange={(e) => handleFileSelect(e, 'EDIT')} className="hidden" /></label>)}
+                <div className="bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative flex justify-center items-center">
+                  <img 
+                    src={tempDetailImage || selectedItem.image} 
+                    alt="Detail" 
+                    className={`max-w-full max-h-full object-contain ${isEditingDetail ? 'opacity-50 blur-sm' : ''}`} 
+                  />
+                  {isEditingDetail && (
+                    <label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer bg-black/10 hover:bg-black/20 transition z-20">
+                      <div className="bg-white p-4 rounded-full shadow-2xl mb-2"><Camera size={32} className="text-blue-600"/></div>
+                      <span className="font-bold text-slate-700 text-lg shadow-sm">Thay đổi ảnh</span>
+                      <input type="file" accept="image/*" onChange={(e) => handleFileSelect(e, 'EDIT')} className="hidden" />
+                    </label>
+                  )}
                 </div>
               </div>
               
@@ -480,7 +477,7 @@ export default function App() {
                 </div>
                 <p className="text-sm text-slate-400 font-mono mb-4">ID: {selectedItem.id}</p>
                 <div className="mb-6"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label><div className="relative"><select value={selectedItem.zoneId || 'UNCATEGORIZED'} onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)} className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition cursor-pointer"><option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>{zones.map(zone => (<option key={zone.id} value={zone.id}>📍 {zone.name} ({zone.location || 'N/A'})</option>))}</select><div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500"><MapPin size={18} /></div></div></div>
-                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-20 text-center font-mono font-bold text-3xl bg-transparent border-b-2 border-blue-500 outline-none" /><button onClick={() => setEditQtyValue(prev => prev + 1)} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-green-50 text-green-500"><Plus size={14}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="ml-2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Check size={16}/></button><button onClick={() => setEditingId(null)} className="bg-slate-200 p-2 rounded hover:bg-slate-300"><X size={16}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span><button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button></>)}</div></div>
+                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-full h-10 text-center font-mono font-bold text-2xl bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800" /><button onClick={() => setEditQtyValue(prev => (prev === "" ? 1 : prev + 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm transition"><Plus size={18}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="w-10 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition"><Check size={18}/></button><button onClick={() => setEditingId(null)} className="w-10 h-10 flex-shrink-0 bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-300 transition"><X size={18}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span><button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button></>)}</div></div>
                 <div className="flex-1"><div className="flex items-center justify-between mb-3"><h2 className="text-xl font-bold flex items-center gap-2 text-slate-700"><AlignLeft size={24}/> Mô tả chi tiết</h2></div>{isEditingDetail ? (<div className="animate-in fade-in"><textarea className="w-full h-64 p-4 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg leading-relaxed text-slate-700" value={editDescValue} onChange={(e) => setEditDescValue(e.target.value)} placeholder="Nhập thông số kỹ thuật..."></textarea></div>) : (<div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">{selectedItem.description ? (<p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">{selectedItem.description}</p>) : (<p className="text-slate-400 italic text-center py-10">Chưa có mô tả nào cho sản phẩm này.</p>)}</div>)}</div>
               </div>
             </div>
@@ -535,13 +532,7 @@ export default function App() {
             </div>
 
             {/* EXPORT BUTTON */}
-            <button 
-              onClick={handleExportExcel}
-              className="bg-blue-700 hover:bg-blue-800 text-white p-2.5 rounded-xl border border-blue-500 shadow-inner flex items-center justify-center"
-              title="Xuất Excel"
-            >
-              <Download size={20}/>
-            </button>
+            <button onClick={handleExportExcel} className="bg-blue-700 hover:bg-blue-800 text-white p-2.5 rounded-xl border border-blue-500 shadow-inner flex items-center justify-center" title="Xuất Excel"><Download size={20}/></button>
           </div>
 
           {activeZone !== 'ALL' && (
