@@ -179,7 +179,7 @@ export default function App() {
     // --- CẤU HÌNH CỘT ---
     worksheet['!cols'] = [
       { wch: 30 }, // A: Tên
-      { wch: 500 }, // B: Hình Ảnh (Preview)
+      { wch: 100 }, // B: Hình Ảnh (Preview)
       { wch: 10 }, // C: SL
       { wch: 20 }, // D: Thùng
       { wch: 25 }, // E: Vị trí
@@ -187,7 +187,7 @@ export default function App() {
     ];
 
     // --- CẤU HÌNH DÒNG (Quan trọng: Phải cao lên để hiện ảnh) ---
-    const rows = [{ hpt: 500 }]; // Header height
+    const rows = [{ hpt: 20 }]; // Header height
     // Duyệt qua từng dòng dữ liệu để set chiều cao và chèn công thức
     for (let i = 0; i < items.length; i++) {
       rows.push({ hpt: 80 }); // Data row height (80 points ~ 106 pixels)
