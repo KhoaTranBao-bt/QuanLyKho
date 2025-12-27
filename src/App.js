@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2, ChevronLeft, ChevronRight 
 } from 'lucide-react';
 
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -47,6 +47,9 @@ const ZONES_COLLECTION = 'inventory_zones';
 const CLOUD_NAME = "dphexeute"; 
 const UPLOAD_PRESET = "kho_linh_kien"; 
 
+// --- CẤU HÌNH PHÂN TRANG ---
+const ITEMS_PER_PAGE = 12; // Số sản phẩm trên mỗi trang
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [items, setItems] = useState([]);
@@ -64,6 +67,9 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   
+  // Pagination State (MỚI)
+  const [currentPage, setCurrentPage] = useState(1);
+
   // Detail & Edit State
   const [selectedItem, setSelectedItem] = useState(null); 
   const [isEditingDetail, setIsEditingDetail] = useState(false); 
@@ -123,6 +129,11 @@ export default function App() {
     return () => { unsubItems(); unsubZones(); };
   }, [user, selectedItem, isEditingDetail]);
 
+  // --- AUTO RESET PAGE KHI LỌC/TÌM KIẾM ---
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, activeZone]);
+
   // --- LOGIC VÙNG (ZONES) ---
   const handleAddZone = async () => {
     const zoneName = window.prompt("Nhập tên khu vực mới:");
@@ -131,9 +142,8 @@ export default function App() {
     }
   };
 
-  // Logic Sửa Tên Vùng (Mới)
   const handleRenameZone = async (zoneId, currentName, e) => {
-    e.stopPropagation(); // Ngăn việc bấm sửa mà lại kích hoạt chọn vùng
+    e.stopPropagation(); 
     const newName = window.prompt("Đổi tên vùng:", currentName);
     if (newName && newName.trim() && newName !== currentName) {
       try {
@@ -281,6 +291,7 @@ export default function App() {
     } catch (e) { console.error(e); setError("Lỗi khi lưu thông tin."); } finally { setIsUploading(false); }
   };
 
+  // --- LOGIC PHÂN TRANG (PAGINATION) ---
   const filteredItems = items.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
     let matchesZone = true;
@@ -289,6 +300,16 @@ export default function App() {
     else matchesZone = item.zoneId === activeZone;
     return matchesSearch && matchesZone;
   });
+
+  const indexOfLastItem = currentPage * ITEMS_PER_PAGE;
+  const indexOfFirstItem = indexOfLastItem - ITEMS_PER_PAGE;
+  const currentItems = filteredItems.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
+
+  const paginate = (pageNumber) => {
+    setCurrentPage(pageNumber);
+    window.scrollTo({ top: 0, behavior: 'smooth' }); // Cuộn lên đầu khi chuyển trang
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10" onPaste={handlePaste}>
@@ -355,13 +376,11 @@ export default function App() {
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
           <button onClick={() => { setActiveZone('ALL'); setIsFormOpen(false); }} className={`whitespace-nowrap px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 ${activeZone === 'ALL' ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}><LayoutGrid size={18}/> Tất cả</button>
           
-          {/* --- ĐÃ XÓA NÚT "CHƯA PHÂN VÙNG" Ở ĐÂY --- */}
-          
+          {/* Nút "Chưa phân vùng" đã bị xóa khỏi menu */}
+
           {zones.map(zone => (
             <div key={zone.id} className="relative group">
               <button onClick={() => { setActiveZone(zone.id); setIsFormOpen(false); }} className={`whitespace-nowrap px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 pr-16 ${activeZone === zone.id ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}><MapPin size={18}/> {zone.name}</button>
-              
-              {/* Nút Sửa & Xóa Zone */}
               <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 opacity-50 group-hover:opacity-100 transition">
                 <button onClick={(e) => handleRenameZone(zone.id, zone.name, e)} className="p-1 text-blue-300 hover:text-white" title="Đổi tên"><Edit2 size={14}/></button>
                 <button onClick={(e) => handleDeleteZone(zone.id, e)} className="p-1 text-blue-300 hover:text-red-300" title="Xóa"><X size={14}/></button>
@@ -399,7 +418,24 @@ export default function App() {
 
         <div className="relative mb-8"><input type="text" placeholder={`Tìm kiếm trong ${activeZone === 'ALL' ? 'tất cả kho' : 'vùng này'}...`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-4 rounded-full border border-slate-200 shadow-md focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none text-lg" /><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-6 h-6" /></div>
 
-        {!loading && filteredItems.length === 0 ? (<div className="text-center py-16 text-slate-400 bg-white rounded-3xl border-2 border-dashed border-slate-200"><Package className="w-16 h-16 mx-auto mb-4 opacity-30" /><p className="text-xl font-medium">{activeZone === 'ALL' ? 'Kho chưa có gì cả' : 'Khu vực này đang trống'}</p>{activeZone !== 'ALL' && activeZone !== 'UNCATEGORIZED' && (<p className="text-sm mt-2 text-blue-500 cursor-pointer hover:underline" onClick={() => setIsFormOpen(true)}>Thêm món đầu tiên ngay</p>)}</div>) : (<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{filteredItems.map((item) => (<div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300"><div onClick={() => openDetail(item)} className="h-80 w-full bg-white relative group border-b border-slate-50 p-4 cursor-pointer"><img src={item.image} alt={item.name} className="w-full h-full object-cover rounded-lg transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} /></div><div className="p-5 flex-1 flex flex-col justify-between"><div className="mb-4"><h3 onClick={() => openDetail(item)} className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1 cursor-pointer hover:text-blue-600 transition">{item.name}</h3>{activeZone === 'ALL' && (<span className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded-full">{zones.find(z => z.id === item.zoneId)?.name || 'Chưa phân vùng'}</span>)}</div><div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 min-h-[60px]">{editingId === item.id ? (<div className="flex items-center justify-between w-full animate-in fade-in duration-200 gap-2"><button onClick={() => setEditQtyValue(prev => (prev === "" || prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-red-200 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-500 shadow-sm transition"><Minus size={18}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-full h-10 text-center font-mono font-bold text-2xl bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800" /><button onClick={() => setEditQtyValue(prev => (prev === "" ? 1 : prev + 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm transition"><Plus size={18}/></button><button onClick={() => saveQuantity(item.id)} className="w-10 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition"><Check size={18}/></button><button onClick={() => setEditingId(null)} className="w-10 h-10 flex-shrink-0 bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-300 transition"><X size={18}/></button></div>) : (<div className="flex items-center justify-between w-full"><div className="flex flex-col"><span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Số lượng</span><span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span></div><button onClick={() => startEditingQty(item)} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center gap-2"><Edit3 size={16}/> Sửa</button></div>)}</div></div></div>))}</div>)}
+        {/* --- DANH SÁCH & PHÂN TRANG --- */}
+        {!loading && filteredItems.length === 0 ? (
+          <div className="text-center py-16 text-slate-400 bg-white rounded-3xl border-2 border-dashed border-slate-200"><Package className="w-16 h-16 mx-auto mb-4 opacity-30" /><p className="text-xl font-medium">{activeZone === 'ALL' ? 'Kho chưa có gì cả' : 'Khu vực này đang trống'}</p>{activeZone !== 'ALL' && activeZone !== 'UNCATEGORIZED' && (<p className="text-sm mt-2 text-blue-500 cursor-pointer hover:underline" onClick={() => setIsFormOpen(true)}>Thêm món đầu tiên ngay</p>)}</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{currentItems.map((item) => (<div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300"><div onClick={() => openDetail(item)} className="h-80 w-full bg-white relative group border-b border-slate-50 p-4 cursor-pointer"><img src={item.image} alt={item.name} className="w-full h-full object-cover rounded-lg transition-transform duration-500 group-hover:scale-105" onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/300x400?text=No+Image'; }} /></div><div className="p-5 flex-1 flex flex-col justify-between"><div className="mb-4"><h3 onClick={() => openDetail(item)} className="font-bold text-slate-800 text-2xl line-clamp-2 leading-tight mb-1 cursor-pointer hover:text-blue-600 transition">{item.name}</h3>{activeZone === 'ALL' && (<span className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded-full">{zones.find(z => z.id === item.zoneId)?.name || 'Chưa phân vùng'}</span>)}</div><div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 min-h-[60px]">{editingId === item.id ? (<div className="flex items-center justify-between w-full animate-in fade-in duration-200 gap-2"><button onClick={() => setEditQtyValue(prev => (prev === "" || prev <= 0 ? 0 : prev - 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-red-200 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-500 shadow-sm transition"><Minus size={18}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-full h-10 text-center font-mono font-bold text-2xl bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800" /><button onClick={() => setEditQtyValue(prev => (prev === "" ? 1 : prev + 1))} className="w-10 h-10 flex-shrink-0 bg-white border border-green-200 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-600 shadow-sm transition"><Plus size={18}/></button><button onClick={() => saveQuantity(item.id)} className="w-10 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md hover:bg-blue-700 transition"><Check size={18}/></button><button onClick={() => setEditingId(null)} className="w-10 h-10 flex-shrink-0 bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-300 transition"><X size={18}/></button></div>) : (<div className="flex items-center justify-between w-full"><div className="flex flex-col"><span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Số lượng</span><span className={`font-mono font-bold text-3xl ${item.quantity === 0 ? 'text-red-500' : 'text-blue-600'}`}>{item.quantity}</span></div><button onClick={() => startEditingQty(item)} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center gap-2"><Edit3 size={16}/> Sửa</button></div>)}</div></div></div>))}</div>
+            {/* Phân trang UI */}
+            {totalPages > 1 && (
+              <div className="flex justify-center mt-12 gap-2">
+                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className="p-2 rounded-lg bg-white border hover:bg-slate-50 disabled:opacity-50"><ChevronLeft size={20}/></button>
+                {Array.from({ length: totalPages }, (_, i) => (
+                  <button key={i + 1} onClick={() => paginate(i + 1)} className={`w-10 h-10 rounded-lg font-bold ${currentPage === i + 1 ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{i + 1}</button>
+                ))}
+                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className="p-2 rounded-lg bg-white border hover:bg-slate-50 disabled:opacity-50"><ChevronRight size={20}/></button>
+              </div>
+            )}
+          </>
+        )}
       </main>
 
       <footer className="max-w-4xl mx-auto px-4 py-10 text-center text-slate-400 text-sm"><p>© {new Date().getFullYear()} Quản Lý Kho Linh Kiện</p><p className="text-xs mt-1">Lưu trữ: Firebase & Cloudinary</p></footer>
