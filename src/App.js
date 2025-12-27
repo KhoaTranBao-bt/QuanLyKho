@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Package, Minus, Save, 
-  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera 
+  Image as ImageIcon, Loader2, X, Check, AlertCircle, Edit3, ArrowLeft, AlignLeft, Move, LayoutGrid, MapPin, FolderInput, Camera, Edit2 
 } from 'lucide-react';
 
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -56,7 +56,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
-  // Form State (Add New)
+  // Form State
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState(1);
   const [newItemImage, setNewItemImage] = useState(''); 
@@ -75,7 +75,7 @@ export default function App() {
   const [editingId, setEditingId] = useState(null); 
   const [editQtyValue, setEditQtyValue] = useState(0);
 
-  // Image View State (Smart Cover)
+  // View State
   const [viewScale, setViewScale] = useState(1); 
   const [viewPosition, setViewPosition] = useState({ x: 0, y: 0 }); 
   const [isDraggingView, setIsDraggingView] = useState(false); 
@@ -108,13 +108,10 @@ export default function App() {
       const loadedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setItems(loadedItems);
       setLoading(false);
-      // Auto update detail view (Realtime update)
       if (selectedItem) {
         const updatedItem = loadedItems.find(i => i.id === selectedItem.id);
-        if (updatedItem) {
-          if (!isEditingDetail) {
+        if (updatedItem && !isEditingDetail) {
              setSelectedItem(updatedItem);
-          }
         }
       }
     });
@@ -123,7 +120,6 @@ export default function App() {
       const loadedZones = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setZones(loadedZones);
     });
-    // --- ĐÃ XÓA 'isEditingDesc' KHỎI DEPENDENCY ARRAY ĐỂ FIX LỖI ---
     return () => { unsubItems(); unsubZones(); };
   }, [user, selectedItem, isEditingDetail]);
 
@@ -134,10 +130,25 @@ export default function App() {
       try { await addDoc(collection(db, ZONES_COLLECTION), { name: zoneName.trim(), createdAt: serverTimestamp(), createdBy: user.uid }); } catch (e) { setError("Không tạo được vùng."); }
     }
   };
+
+  // Logic Sửa Tên Vùng (Mới)
+  const handleRenameZone = async (zoneId, currentName, e) => {
+    e.stopPropagation(); // Ngăn việc bấm sửa mà lại kích hoạt chọn vùng
+    const newName = window.prompt("Đổi tên vùng:", currentName);
+    if (newName && newName.trim() && newName !== currentName) {
+      try {
+        await updateDoc(doc(db, ZONES_COLLECTION, zoneId), { name: newName.trim() });
+      } catch (e) {
+        setError("Lỗi khi đổi tên vùng.");
+      }
+    }
+  };
+
   const handleDeleteZone = async (zoneId, e) => {
     e.stopPropagation();
     if (window.confirm("Xóa vùng này? Sản phẩm sẽ chuyển về 'Chưa phân vùng'.")) { try { await deleteDoc(doc(db, ZONES_COLLECTION, zoneId)); } catch (e) { setError("Lỗi khi xóa vùng."); } }
   };
+
   const handleChangeItemZone = async (itemId, newZoneId) => {
     try { const zoneValue = newZoneId === 'UNCATEGORIZED' ? null : newZoneId; await updateDoc(doc(db, ITEMS_COLLECTION, itemId), { zoneId: zoneValue }); } catch (e) { console.error(e); setError("Lỗi khi chuyển vùng sản phẩm."); }
   };
@@ -180,7 +191,6 @@ export default function App() {
 
   const handlePaste = (e) => {
     if (!isFormOpen && !isEditingDetail) return;
-    
     const items = e.clipboardData.items;
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.indexOf('image') !== -1) {
@@ -214,11 +224,8 @@ export default function App() {
     }
     try { 
       const base64 = await getCroppedImg(imgRef.current, completedCrop, 'newFile.jpeg'); 
-      if (cropContext === 'ADD') {
-        setNewItemImage(base64);
-      } else {
-        setTempDetailImage(base64);
-      }
+      if (cropContext === 'ADD') setNewItemImage(base64);
+      else setTempDetailImage(base64);
       setIsCropping(false); setImageSrc(null); 
     } catch (e) { 
       if (cropContext === 'ADD') setNewItemImage(imageSrc);
@@ -253,58 +260,27 @@ export default function App() {
 
   const handleDeleteItem = async (id) => { if (window.confirm("Xóa linh kiện này?")) { try { await deleteDoc(doc(db, ITEMS_COLLECTION, id)); setSelectedItem(null); } catch (err) { setError("Lỗi xóa."); } } };
   
-  // Logic Sửa Số Lượng
   const startEditingQty = (item) => { setEditingId(item.id); setEditQtyValue(item.quantity); };
   const handleEditQtyChange = (val) => { const v = parseInt(val); if (!isNaN(v) && v >= 0) setEditQtyValue(v); else if (val === "") setEditQtyValue(""); };
   const saveQuantity = async (id) => { if (editQtyValue === "" || editQtyValue < 0) { alert("Số lượng sai!"); return; } try { await updateDoc(doc(db, ITEMS_COLLECTION, id), { quantity: parseInt(editQtyValue) }); setEditingId(null); } catch (err) {} };
   
-  // Logic Mở Chi Tiết
   const openDetail = (item) => { 
-    setSelectedItem(item); 
-    setEditDescValue(item.description || ""); 
-    setEditNameValue(item.name); 
-    setTempDetailImage(null); 
-    setIsEditingDetail(false); 
-    setViewPosition({x:0, y:0}); 
+    setSelectedItem(item); setEditDescValue(item.description || ""); setEditNameValue(item.name); setTempDetailImage(null); setIsEditingDetail(false); setViewPosition({x:0, y:0}); 
   };
 
-  // Logic Lưu Thay Đổi Chi Tiết
   const handleSaveDetailChanges = async () => {
     if (!selectedItem || !user) return;
     if (!editNameValue.trim()) { alert("Tên không được để trống"); return; }
-    
     setIsUploading(true);
     try {
       let finalImageUrl = selectedItem.image;
-      
-      if (tempDetailImage && tempDetailImage.startsWith('data:image')) {
-        finalImageUrl = await uploadToCloudinary(tempDetailImage);
-      }
-
-      await updateDoc(doc(db, ITEMS_COLLECTION, selectedItem.id), {
-        name: editNameValue.trim(),
-        description: editDescValue,
-        image: finalImageUrl
-      });
-
-      setSelectedItem(prev => ({
-        ...prev,
-        name: editNameValue.trim(),
-        description: editDescValue,
-        image: finalImageUrl
-      }));
-
-      setIsEditingDetail(false);
-      setTempDetailImage(null);
-    } catch (e) {
-      console.error(e);
-      setError("Lỗi khi lưu thông tin.");
-    } finally {
-      setIsUploading(false);
-    }
+      if (tempDetailImage && tempDetailImage.startsWith('data:image')) { finalImageUrl = await uploadToCloudinary(tempDetailImage); }
+      await updateDoc(doc(db, ITEMS_COLLECTION, selectedItem.id), { name: editNameValue.trim(), description: editDescValue, image: finalImageUrl });
+      setSelectedItem(prev => ({ ...prev, name: editNameValue.trim(), description: editDescValue, image: finalImageUrl }));
+      setIsEditingDetail(false); setTempDetailImage(null);
+    } catch (e) { console.error(e); setError("Lỗi khi lưu thông tin."); } finally { setIsUploading(false); }
   };
 
-  // --- FILTERING ---
   const filteredItems = items.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
     let matchesZone = true;
@@ -317,7 +293,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10" onPaste={handlePaste}>
       
-      {/* --- CHI TIẾT SẢN PHẨM (Overlay) --- */}
+      {/* --- CHI TIẾT SẢN PHẨM --- */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-white overflow-y-auto animate-in slide-in-from-right duration-300">
           <div className="max-w-5xl mx-auto px-4 py-6">
@@ -332,117 +308,34 @@ export default function App() {
                     <button onClick={() => setIsEditingDetail(true)} className="bg-blue-100 text-blue-600 px-4 py-2 rounded-lg font-bold flex gap-2 items-center hover:bg-blue-200 transition">
                       <Edit3 size={20}/> Sửa thông tin
                     </button>
-                    <button onClick={() => handleDeleteItem(selectedItem.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg font-bold flex gap-1 items-center transition">
-                      <Trash2 size={20}/>
-                    </button>
+                    <button onClick={() => handleDeleteItem(selectedItem.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg font-bold flex gap-1 items-center transition"><Trash2 size={20}/></button>
                   </>
                 ) : (
                   <>
-                    <button onClick={handleSaveDetailChanges} disabled={isUploading} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex gap-2 items-center hover:bg-blue-700 transition shadow-lg disabled:opacity-50">
-                      <Save size={20}/> {isUploading ? 'Đang lưu...' : 'Lưu lại'}
-                    </button>
-                    <button onClick={() => { setIsEditingDetail(false); setTempDetailImage(null); setEditNameValue(selectedItem.name); setEditDescValue(selectedItem.description || ""); }} disabled={isUploading} className="bg-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold hover:bg-slate-300 transition">
-                      Hủy
-                    </button>
+                    <button onClick={handleSaveDetailChanges} disabled={isUploading} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex gap-2 items-center hover:bg-blue-700 transition shadow-lg disabled:opacity-50"><Save size={20}/> {isUploading ? 'Đang lưu...' : 'Lưu lại'}</button>
+                    <button onClick={() => { setIsEditingDetail(false); setTempDetailImage(null); setEditNameValue(selectedItem.name); setEditDescValue(selectedItem.description || ""); }} disabled={isUploading} className="bg-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold hover:bg-slate-300 transition">Hủy</button>
                   </>
                 )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* --- ẢNH --- */}
               <div className="relative group">
-                <div className={`bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative ${!isEditingDetail ? 'cursor-grab active:cursor-grabbing' : ''}`} 
-                     onMouseDown={!isEditingDetail ? handleViewMouseDown : undefined} 
-                     onMouseMove={!isEditingDetail ? handleViewMouseMove : undefined} 
-                     onMouseUp={!isEditingDetail ? handleViewMouseUp : undefined} 
-                     onMouseLeave={!isEditingDetail ? handleViewMouseUp : undefined}
-                >
-                  <img 
-                    src={tempDetailImage || selectedItem.image} 
-                    alt="Detail" 
-                    onLoad={handleDetailImageLoad} 
-                    className={`absolute top-1/2 left-1/2 max-w-none transition-transform duration-75 ease-out ${isEditingDetail ? 'opacity-80 blur-[2px]' : ''}`} 
-                    draggable="false" 
-                    style={{ transform: `translate(-50%, -50%) scale(${viewScale}) translate(${viewPosition.x / viewScale}px, ${viewPosition.y / viewScale}px)` }} 
-                  />
-                  
-                  {isEditingDetail && (
-                    <label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer bg-black/20 hover:bg-black/30 transition z-20">
-                      <div className="bg-white p-4 rounded-full shadow-2xl mb-2">
-                        <Camera size={32} className="text-blue-600"/>
-                      </div>
-                      <span className="font-bold text-white text-lg shadow-black drop-shadow-md">Thay đổi ảnh</span>
-                      <input type="file" accept="image/*" onChange={(e) => handleFileSelect(e, 'EDIT')} className="hidden" />
-                    </label>
-                  )}
+                <div className={`bg-slate-50 rounded-3xl overflow-hidden border border-slate-200 shadow-inner h-[400px] lg:h-[600px] relative ${!isEditingDetail ? 'cursor-grab active:cursor-grabbing' : ''}`} onMouseDown={!isEditingDetail ? handleViewMouseDown : undefined} onMouseMove={!isEditingDetail ? handleViewMouseMove : undefined} onMouseUp={!isEditingDetail ? handleViewMouseUp : undefined} onMouseLeave={!isEditingDetail ? handleViewMouseUp : undefined}>
+                  <img src={tempDetailImage || selectedItem.image} alt="Detail" onLoad={handleDetailImageLoad} className={`absolute top-1/2 left-1/2 max-w-none transition-transform duration-75 ease-out ${isEditingDetail ? 'opacity-80 blur-[2px]' : ''}`} draggable="false" style={{ transform: `translate(-50%, -50%) scale(${viewScale}) translate(${viewPosition.x / viewScale}px, ${viewPosition.y / viewScale}px)` }} />
+                  {isEditingDetail && (<label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer bg-black/20 hover:bg-black/30 transition z-20"><div className="bg-white p-4 rounded-full shadow-2xl mb-2"><Camera size={32} className="text-blue-600"/></div><span className="font-bold text-white text-lg shadow-black drop-shadow-md">Thay đổi ảnh</span><input type="file" accept="image/*" onChange={(e) => handleFileSelect(e, 'EDIT')} className="hidden" /></label>)}
                 </div>
               </div>
               
-              {/* --- THÔNG TIN --- */}
               <div className="flex flex-col">
                 <div className="mb-4">
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Tên sản phẩm</label>
-                  {isEditingDetail ? (
-                    <input 
-                      type="text" 
-                      value={editNameValue} 
-                      onChange={(e) => setEditNameValue(e.target.value)} 
-                      className="w-full text-3xl md:text-4xl font-bold text-slate-800 border-b-2 border-blue-500 focus:outline-none bg-transparent py-2"
-                    />
-                  ) : (
-                    <h1 className="text-3xl md:text-4xl font-bold text-slate-800">{selectedItem.name}</h1>
-                  )}
+                  {isEditingDetail ? (<input type="text" value={editNameValue} onChange={(e) => setEditNameValue(e.target.value)} className="w-full text-3xl md:text-4xl font-bold text-slate-800 border-b-2 border-blue-500 focus:outline-none bg-transparent py-2" />) : (<h1 className="text-3xl md:text-4xl font-bold text-slate-800">{selectedItem.name}</h1>)}
                 </div>
-
                 <p className="text-sm text-slate-400 font-mono mb-4">ID: {selectedItem.id}</p>
-
-                <div className="mb-6">
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label>
-                  <div className="relative">
-                    <select value={selectedItem.zoneId || 'UNCATEGORIZED'} onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)} className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition cursor-pointer">
-                      <option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>
-                      {zones.map(zone => (<option key={zone.id} value={zone.id}>📍 {zone.name}</option>))}
-                    </select>
-                    <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500"><MapPin size={18} /></div>
-                  </div>
-                </div>
-
-                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8">
-                   <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span>
-                   <div className="flex items-center gap-4">
-                      {editingId === selectedItem.id ? (
-                        <div className="flex items-center gap-2">
-                           <button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button>
-                           <input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-20 text-center font-mono font-bold text-3xl bg-transparent border-b-2 border-blue-500 outline-none" />
-                           <button onClick={() => setEditQtyValue(prev => prev + 1)} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-green-50 text-green-500"><Plus size={14}/></button>
-                           <button onClick={() => saveQuantity(selectedItem.id)} className="ml-2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Check size={16}/></button>
-                           <button onClick={() => setEditingId(null)} className="bg-slate-200 p-2 rounded hover:bg-slate-300"><X size={16}/></button>
-                        </div>
-                      ) : (
-                        <>
-                          <span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span>
-                          <span className="text-slate-500 font-medium">cái</span>
-                          <button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button>
-                        </>
-                      )}
-                   </div>
-                </div>
-
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-xl font-bold flex items-center gap-2 text-slate-700"><AlignLeft size={24}/> Mô tả chi tiết</h2>
-                  </div>
-                  {isEditingDetail ? (
-                    <div className="animate-in fade-in">
-                      <textarea className="w-full h-64 p-4 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg leading-relaxed text-slate-700" value={editDescValue} onChange={(e) => setEditDescValue(e.target.value)} placeholder="Nhập thông số kỹ thuật..."></textarea>
-                    </div>
-                  ) : (
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">
-                      {selectedItem.description ? (<p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">{selectedItem.description}</p>) : (<p className="text-slate-400 italic text-center py-10">Chưa có mô tả nào cho sản phẩm này.</p>)}
-                    </div>
-                  )}
-                </div>
+                <div className="mb-6"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderInput size={14}/> Khu vực lưu trữ</label><div className="relative"><select value={selectedItem.zoneId || 'UNCATEGORIZED'} onChange={(e) => handleChangeItemZone(selectedItem.id, e.target.value)} className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-3 pl-4 pr-10 rounded-xl appearance-none focus:outline-none focus:border-blue-500 transition cursor-pointer"><option value="UNCATEGORIZED">⚠️ Chưa phân vùng</option>{zones.map(zone => (<option key={zone.id} value={zone.id}>📍 {zone.name}</option>))}</select><div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500"><MapPin size={18} /></div></div></div>
+                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-2">Tồn kho hiện tại</span><div className="flex items-center gap-4">{editingId === selectedItem.id ? (<div className="flex items-center gap-2"><button onClick={() => setEditQtyValue(prev => (prev <= 0 ? 0 : prev - 1))} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-red-50 text-red-500"><Minus size={14}/></button><input type="number" value={editQtyValue} onChange={(e) => handleEditQtyChange(e.target.value)} className="w-20 text-center font-mono font-bold text-3xl bg-transparent border-b-2 border-blue-500 outline-none" /><button onClick={() => setEditQtyValue(prev => prev + 1)} className="w-8 h-8 bg-white rounded flex items-center justify-center border hover:bg-green-50 text-green-500"><Plus size={14}/></button><button onClick={() => saveQuantity(selectedItem.id)} className="ml-2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Check size={16}/></button><button onClick={() => setEditingId(null)} className="bg-slate-200 p-2 rounded hover:bg-slate-300"><X size={16}/></button></div>) : (<><span className="text-5xl font-mono font-bold text-blue-600">{selectedItem.quantity}</span><span className="text-slate-500 font-medium">cái</span><button onClick={() => startEditingQty(selectedItem)} className="ml-4 text-blue-400 hover:text-blue-600"><Edit3 size={20}/></button></>)}</div></div>
+                <div className="flex-1"><div className="flex items-center justify-between mb-3"><h2 className="text-xl font-bold flex items-center gap-2 text-slate-700"><AlignLeft size={24}/> Mô tả chi tiết</h2></div>{isEditingDetail ? (<div className="animate-in fade-in"><textarea className="w-full h-64 p-4 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg leading-relaxed text-slate-700" value={editDescValue} onChange={(e) => setEditDescValue(e.target.value)} placeholder="Nhập thông số kỹ thuật..."></textarea></div>) : (<div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-h-[400px] overflow-y-auto">{selectedItem.description ? (<p className="whitespace-pre-wrap text-lg text-slate-600 leading-relaxed">{selectedItem.description}</p>) : (<p className="text-slate-400 italic text-center py-10">Chưa có mô tả nào cho sản phẩm này.</p>)}</div>)}</div>
               </div>
             </div>
           </div>
@@ -461,11 +354,18 @@ export default function App() {
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
           <button onClick={() => { setActiveZone('ALL'); setIsFormOpen(false); }} className={`whitespace-nowrap px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 ${activeZone === 'ALL' ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}><LayoutGrid size={18}/> Tất cả</button>
-          <button onClick={() => { setActiveZone('UNCATEGORIZED'); setIsFormOpen(false); }} className={`whitespace-nowrap px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 ${activeZone === 'UNCATEGORIZED' ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}><AlertCircle size={18}/> Chưa phân vùng</button>
+          
+          {/* --- ĐÃ XÓA NÚT "CHƯA PHÂN VÙNG" Ở ĐÂY --- */}
+          
           {zones.map(zone => (
             <div key={zone.id} className="relative group">
-              <button onClick={() => { setActiveZone(zone.id); setIsFormOpen(false); }} className={`whitespace-nowrap px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 pr-8 ${activeZone === zone.id ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}><MapPin size={18}/> {zone.name}</button>
-              <button onClick={(e) => handleDeleteZone(zone.id, e)} className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-blue-300 hover:text-red-300 opacity-50 hover:opacity-100 transition" title="Xóa vùng"><X size={14}/></button>
+              <button onClick={() => { setActiveZone(zone.id); setIsFormOpen(false); }} className={`whitespace-nowrap px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 pr-16 ${activeZone === zone.id ? 'bg-white text-blue-600 shadow-md' : 'bg-blue-700 text-blue-100 hover:bg-blue-500'}`}><MapPin size={18}/> {zone.name}</button>
+              
+              {/* Nút Sửa & Xóa Zone */}
+              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 opacity-50 group-hover:opacity-100 transition">
+                <button onClick={(e) => handleRenameZone(zone.id, zone.name, e)} className="p-1 text-blue-300 hover:text-white" title="Đổi tên"><Edit2 size={14}/></button>
+                <button onClick={(e) => handleDeleteZone(zone.id, e)} className="p-1 text-blue-300 hover:text-red-300" title="Xóa"><X size={14}/></button>
+              </div>
             </div>
           ))}
           <button onClick={handleAddZone} className="whitespace-nowrap px-4 py-2 rounded-lg font-bold border-2 border-blue-400 border-dashed text-blue-100 hover:bg-blue-500 hover:text-white transition flex items-center gap-2"><Plus size={18}/> Tạo vùng</button>
@@ -479,30 +379,16 @@ export default function App() {
         {isCropping && (
           <div className="fixed inset-0 z-[60] bg-black/80 flex justify-center items-center p-4">
              <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden">
-                <div className="p-4 bg-slate-100 border-b flex justify-between items-center">
-                   <h3 className="font-bold text-lg">Cắt ảnh ({cropContext === 'ADD' ? 'Thêm mới' : 'Cập nhật'})</h3>
-                   <button onClick={() => setIsCropping(false)}><X/></button>
-                </div>
-                <div className="p-4 bg-slate-900 flex justify-center max-h-[60vh]">
-                  <ReactCrop crop={crop} onChange={(_, percentCrop) => setCrop(percentCrop)} onComplete={(c) => setCompletedCrop(c)} aspect={undefined} minWidth={20} minHeight={20}>
-                    <img src={imageSrc} alt="Upload" onLoad={onImageLoad} style={{ maxHeight: '60vh', maxWidth: '100%', objectFit: 'contain' }} />
-                  </ReactCrop>
-                </div>
-                <div className="p-4 flex gap-4">
-                   <button onClick={() => setIsCropping(false)} className="flex-1 py-3 rounded-xl font-bold bg-slate-200 text-slate-700">Hủy</button>
-                   <button onClick={showCroppedImage} className="flex-1 py-3 rounded-xl font-bold bg-green-600 text-white">Xong</button>
-                </div>
+                <div className="p-4 bg-slate-100 border-b flex justify-between items-center"><h3 className="font-bold text-lg">Cắt ảnh ({cropContext === 'ADD' ? 'Thêm mới' : 'Cập nhật'})</h3><button onClick={() => setIsCropping(false)}><X/></button></div>
+                <div className="p-4 bg-slate-900 flex justify-center max-h-[60vh]"><ReactCrop crop={crop} onChange={(_, percentCrop) => setCrop(percentCrop)} onComplete={(c) => setCompletedCrop(c)} aspect={undefined} minWidth={20} minHeight={20}><img src={imageSrc} alt="Upload" onLoad={onImageLoad} style={{ maxHeight: '60vh', maxWidth: '100%', objectFit: 'contain' }} /></ReactCrop></div>
+                <div className="p-4 flex gap-4"><button onClick={() => setIsCropping(false)} className="flex-1 py-3 rounded-xl font-bold bg-slate-200 text-slate-700">Hủy</button><button onClick={showCroppedImage} className="flex-1 py-3 rounded-xl font-bold bg-green-600 text-white">Xong</button></div>
              </div>
           </div>
         )}
 
         {isFormOpen && activeZone !== 'ALL' && activeZone !== 'UNCATEGORIZED' && (
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200 animate-in slide-in-from-top-4" onPaste={handlePaste}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="font-bold text-2xl text-slate-800">Thêm vào: {zones.find(z => z.id === activeZone)?.name}</h2>
-              <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">Hỗ trợ dán ảnh (Ctrl+V)</span>
-            </div>
-            
+            <div className="flex justify-between items-center mb-6"><h2 className="font-bold text-2xl text-slate-800">Thêm vào: {zones.find(z => z.id === activeZone)?.name}</h2><span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">Hỗ trợ dán ảnh (Ctrl+V)</span></div>
             <form onSubmit={handleAddItem} className="space-y-6">
               <div><label className="block text-base font-bold mb-2 text-slate-700">Tên linh kiện</label><input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} className="w-full px-5 py-3 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-0 outline-none text-lg" required placeholder="Nhập tên..." /></div>
               <div className="flex gap-6"><div className="w-1/3"><label className="block text-base font-bold mb-2 text-slate-700">Số lượng</label><input type="number" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="w-full px-5 py-3 border-2 border-slate-200 rounded-xl focus:border-blue-500 outline-none text-lg font-mono" min="0" /></div><div className="w-2/3"><label className="block text-base font-bold mb-2 text-slate-700">Hình ảnh</label>{newItemImage ? (<div className="relative h-64 w-full bg-slate-50 rounded-xl overflow-hidden border-2 border-slate-300 group"><img src={newItemImage} alt="Preview" className="w-full h-full object-cover" /><button type="button" onClick={() => setNewItemImage('')} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full shadow-lg hover:bg-red-600 transition"><Trash2 size={20}/></button></div>) : (<label className="cursor-pointer bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center h-64 text-slate-500 transition hover:border-blue-400 hover:text-blue-500"><ImageIcon size={40} className="mb-2 opacity-50"/><span className="text-sm font-bold">Bấm chọn hoặc dán (Ctrl+V)</span><input type="file" accept="image/*" onChange={(e) => handleFileSelect(e, 'ADD')} className="hidden" /></label>)}</div></div>
