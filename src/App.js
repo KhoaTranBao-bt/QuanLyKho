@@ -33,7 +33,7 @@ import * as XLSX from 'xlsx';
 // Đây là tài khoản cứu hộ, luôn đăng nhập được
 const MASTER_USER = {
   username: "admin",
-  password: "123", 
+  password: "2272002Tbkstorm@123", 
   name: "Quản trị viên (Gốc)"
 };
 
