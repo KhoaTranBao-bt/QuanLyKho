@@ -269,12 +269,12 @@ export default function App() {
       return { 'Tên Linh Kiện': item.name, 'Hình Ảnh': '', 'Số Lượng': item.quantity, 'Thùng Chứa': zone ? zone.name : 'Chưa phân vùng', 'Vị Trí': zone ? zone.location || 'Chưa cập nhật' : '---', 'Link Ảnh Gốc': item.image };
     });
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    worksheet['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 50 }];
+    worksheet['!cols'] = [{ wch: 30 }, { wch: 100}, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 50 }];
     const rows = [{ hpt: 20 }]; 
     for (let i = 0; i < items.length; i++) {
       rows.push({ hpt: 80 }); 
       const rowIndex = i + 2; const cellRef = `B${rowIndex}`; const linkRef = `F${rowIndex}`; 
-      if (items[i].image) { worksheet[cellRef] = { t: 'f', f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 1)`, v: 'Loading Image...' }; }
+      if (items[i].image) { worksheet[cellRef] = { t: 'f', f: `_xlfn.IMAGE(TRIM(${linkRef}), "", 1, 500,500)`, v: 'Loading Image...' }; }
     }
     worksheet['!rows'] = rows;
     const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Kho Linh Kien");
